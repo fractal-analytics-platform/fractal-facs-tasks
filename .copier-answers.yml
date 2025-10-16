@@ -1,0 +1,13 @@
+# Do not edit - changes here will be overwritten by Copier
+_commit: v0.6.1
+_src_path: gh:fractal-analytics-platform/fractal-tasks-template
+author_email: joel.luethi@uzh.ch
+author_name: Joel Luethi
+mode: quick
+package_name: fcf_ome_zarr
+project_name: fcf-ome-zarr
+project_short_description: Process UZH FCF images in OME-Zarr
+project_url: ''
+run_git_init: true
+run_pixi_init_task: true
+
