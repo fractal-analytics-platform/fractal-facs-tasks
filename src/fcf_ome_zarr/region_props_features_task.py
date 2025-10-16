@@ -1,19 +1,23 @@
 """This is the Python module for my_task."""
 
 import logging
+from typing import Optional
 
 import numpy as np
 import pandas as pd
 from ngio import Roi, RoiPixels, open_ome_zarr_container
 from ngio.experimental.iterators import FeatureExtractorIterator
-from ngio.tables import FeatureTable
+from ngio.tables import FeatureTable, RoiTable
 from ngio.transforms import ZoomTransform
 from pydantic import validate_call
 from skimage import measure
 
 
 def region_props_features_func(
-    image: np.ndarray, label: np.ndarray, roi: Roi | RoiPixels
+    image: np.ndarray,
+    label: np.ndarray,
+    roi: Roi | RoiPixels,
+    roi_reference_table: RoiTable,
 ) -> dict:
     """Extract region properties features from a label image within a ROI."""
     assert image.ndim in (3, 4), "Image must be 3D yxc or 4D yxzc "
@@ -33,9 +37,16 @@ def region_props_features_func(
             "label",
             "area",
             "area_bbox",
+            "convex_area",
+            "equivalent_diameter_area",
+            "euler_number",
+            "extent",
+            "feret_diameter_max",
             "axis_major_length",
             "axis_minor_length",
             "solidity",
+            "perimeter",
+            "moments_hu",
             "mean_intensity",
             "max_intensity",
             "min_intensity",
@@ -47,6 +58,8 @@ def region_props_features_func(
     num_regions = len(props["label"])
     props["region"] = [roi.get_name()] * num_regions
     props["time"] = [roi.t] * num_regions
+
+    # TODO: Calculate which ROI this object is in
     return props
 
 
@@ -75,6 +88,7 @@ def region_props_features_task(
     # Input parameters
     label_image_name: str,
     output_table_name: str = "region_props_features",
+    refercene_roi_table: Optional[str] = None,
     overwrite: bool = True,
 ) -> None:
     """Extract region props. features from a OME-Zarr image and save them as a table.
@@ -85,6 +99,9 @@ def region_props_features_task(
         zarr_url (str): URL to the OME-Zarr container
         label_image_name (str): Name of the label image to analyze.
         output_table_name (str): Name for the output feature table.
+        refercene_roi_table (str): Optional ROI table for reference. If
+            provided, it is measured which ROI from this table every object
+            centroid is in.
         overwrite (bool): Whether to overwrite an existing feature table.
             Defaults to True.
     """
@@ -152,6 +169,7 @@ def region_props_features_task(
             image=input_data,
             label=label_data,
             roi=roi,
+            roi_reference_table=refercene_roi_table,  # FIXME: Actually pass the table
         )
         # Feature ExtractorIterator does not handle writing, so we collect
         # the tables and write them at the end

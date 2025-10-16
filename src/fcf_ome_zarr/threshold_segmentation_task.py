@@ -84,7 +84,7 @@ def threshold_segmentation_task(
     # Segmentation parameters
     channel: ChannelSelectionModel,
     label_name: Optional[str] = None,
-    threshold: int,
+    threshold: float,
     min_size: int = 50,
     # Iteration parameters
     iterator_configuration: Optional[IteratorConfiguration] = None,
@@ -98,7 +98,7 @@ def threshold_segmentation_task(
             segmentation.
         label_name (Optional[str]): Name of the resulting label image. If not provided,
             it will be set to "<channel_identifier>_thresholded".
-        threshold (int): Threshold value to be applied.
+        threshold (float): Threshold value to be applied.
         min_size (int): Minimum size of objects. Smaller objects are filtered out.
         iterator_configuration (Optional[IteratorConfiguration]): Advanced
             configuration to control masked and ROI-based iteration.
@@ -127,7 +127,7 @@ def threshold_segmentation_task(
         iterator = SegmentationIterator(
             input_image=image,
             output_label=label,
-            channel_selection=0,  # channel,
+            channel_selection=channel,
             axes_order="zyx",
         )
     else:

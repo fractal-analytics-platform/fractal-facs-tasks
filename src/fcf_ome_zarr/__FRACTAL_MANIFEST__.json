@@ -130,8 +130,7 @@
         ],
         "type": "object",
         "title": "ThresholdSegmentationTask"
-      },
-      "docs_link": ""
+      }
     },
     {
       "name": "Gaussian Blur",
@@ -193,8 +192,7 @@
         ],
         "type": "object",
         "title": "GaussianBlurTask"
-      },
-      "docs_link": ""
+      }
     },
     {
       "name": "Region Props Features",
@@ -243,8 +241,7 @@
         ],
         "type": "object",
         "title": "RegionPropsFeaturesTask"
-      },
-      "docs_link": ""
+      }
     }
   ],
   "has_args_schemas": true,

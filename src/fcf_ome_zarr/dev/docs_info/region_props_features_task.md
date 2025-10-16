@@ -1,10 +1,5 @@
 ### Purpose
-- Description and documentation of the Task functionality
-- Bullet points that cover main features of the tasks.
-- Can use **full** *markdown* formatting (including embedding images).
+- Makes region properties measurements on label images and stores them in the OME-Zarr format.
 
 ### Outputs
-- Optional section on what kind of outputs the task generates. For the thresholding_task: Generates a new label image named `label_name`.
-
-### Limitations
-- List known limitations of the task (e.g. only works for certain data types).
+- A measurements table in the OME-Zarr format.
