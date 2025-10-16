@@ -45,8 +45,6 @@ def region_props_features_func(
             "axis_major_length",
             "axis_minor_length",
             "solidity",
-            "perimeter",
-            "moments_hu",
             "mean_intensity",
             "max_intensity",
             "min_intensity",
