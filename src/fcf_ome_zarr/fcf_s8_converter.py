@@ -240,6 +240,13 @@ def fcf_s8_converter(
     # --- Create ROI table ---
     roi_table = RoiTable(rois=rois)
     ome_zarr_container.add_table("FOV_ROI_table", roi_table, overwrite=overwrite)
+
+    # Genereate a ROI table that covers the full image
+    image_roi_table = ngio_image.build_image_roi_table()
+    ome_zarr_container.add_table(
+        "image_ROI_table", image_roi_table, overwrite=overwrite
+    )
+
     ngio_image.consolidate()
     reset_omero_channels(store, level="3")
 
