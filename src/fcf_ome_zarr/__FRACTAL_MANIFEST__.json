@@ -102,7 +102,7 @@
           },
           "threshold": {
             "title": "Threshold",
-            "type": "number",
+            "type": "integer",
             "description": "Threshold value to be applied."
           },
           "min_size": {
