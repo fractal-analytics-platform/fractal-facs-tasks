@@ -168,7 +168,6 @@ def region_props_features_task(
             image=input_data,
             label=label_data,
             roi=roi,
-            roi_reference_table=refercene_roi_table,  # FIXME: Actually pass the table
         )
         # Feature ExtractorIterator does not handle writing, so we collect
         # the tables and write them at the end

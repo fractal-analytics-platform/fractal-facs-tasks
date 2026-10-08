@@ -10,9 +10,10 @@ import ngio
 import numpy as np
 import tifffile
 import zarr
-from ngio import Roi
+from ngio import Roi, RoiSlice
 from ngio.tables import RoiTable
 from pydantic import validate_call
+from zarr.storage import LocalStore
 
 
 def find_max_dimensions(tif_folder_path):
@@ -183,13 +184,13 @@ def fcf_s8_converter(
     logging.info(f"Total image size: {total_y} y x {total_x} x")
 
     # Create OME-Zarr
-    store = zarr.DirectoryStore(zarr_url)
+    store = LocalStore(zarr_url)
     if add_z_singleton:
         ome_zarr_container = ngio.create_empty_ome_zarr(
             store,
             shape=(n_channels, 1, total_y, total_x),
             axes_names=["c", "z", "y", "x"],
-            xy_pixelsize=xy_pixelsize,
+            pixelsize=xy_pixelsize,
             dtype="float32",
             chunks=(6, 1, 512, 512),  # adjust as needed
             overwrite=overwrite,
@@ -199,7 +200,7 @@ def fcf_s8_converter(
             store,
             shape=(n_channels, total_y, total_x),
             axes_names=["c", "y", "x"],
-            xy_pixelsize=xy_pixelsize,
+            pixelsize=xy_pixelsize,
             dtype="float32",
             chunks=(6, 512, 512),  # adjust as needed
             overwrite=overwrite,
@@ -230,10 +231,19 @@ def fcf_s8_converter(
         rois.append(
             Roi(
                 name=str(i),
-                x=x0 * xy_pixelsize,
-                y=y0 * xy_pixelsize,
-                x_length=x_true * xy_pixelsize,
-                y_length=y_true * xy_pixelsize,
+                slices=[
+                    RoiSlice(
+                        axis_name="x",
+                        start=x0 * xy_pixelsize,
+                        length=x_true * xy_pixelsize,
+                    ),
+                    RoiSlice(
+                        axis_name="y",
+                        start=y0 * xy_pixelsize,
+                        length=y_true * xy_pixelsize,
+                    ),
+                ],
+                space="world",
             )
         )
 
