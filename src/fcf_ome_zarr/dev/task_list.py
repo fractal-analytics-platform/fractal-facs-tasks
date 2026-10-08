@@ -8,20 +8,6 @@ AUTHORS = "Joel Luethi"
 DOCS_LINK = None
 
 
-INPUT_MODELS = [
-    ("ngio", "images/_image.py", "ChannelSelectionModel"),
-    (
-        "fcf_ome_zarr",
-        "utils.py",
-        "MaskingConfiguration",
-    ),
-    (
-        "fcf_ome_zarr",
-        "utils.py",
-        "IteratorConfiguration",
-    ),
-]
-
 TASK_LIST = [
     ParallelTask(
         name="Threshold Segmentation",
