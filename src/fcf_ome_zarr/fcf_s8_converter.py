@@ -10,12 +10,15 @@ import ngio
 import numpy as np
 import tifffile
 import zarr
-from ngio import Roi
+from dask.array.core import Array as DaskArray
+from ngio import NgioSupportedStore, Roi, RoiSlice
 from ngio.tables import RoiTable
+from numpy.typing import DTypeLike
 from pydantic import validate_call
+from zarr.storage import LocalStore
 
 
-def find_max_dimensions(tif_folder_path):
+def find_max_dimensions(tif_folder_path: Path) -> tuple[int, int]:
     """Find the maximum dimensions (y, x) across all TIFF files in the folder."""
     max_y = 0
     max_x = 0
@@ -33,7 +36,9 @@ def find_max_dimensions(tif_folder_path):
     return max_y, max_x
 
 
-def pad_to_shape(img, target_shape, dtype=np.float32):
+def pad_to_shape(
+    img: np.ndarray, target_shape: tuple[int, int], dtype: DTypeLike = np.float32
+) -> np.ndarray:
     """Pad a 3D image (c, y, x) to the target shape (y, x) with zeros."""
     c, y, x = img.shape
     padded = np.zeros((c, *target_shape), dtype=dtype)
@@ -41,7 +46,9 @@ def pad_to_shape(img, target_shape, dtype=np.float32):
     return padded
 
 
-def sampled_percentiles(ac, low=0.5, high=99.5, n_chunks=200):
+def sampled_percentiles(
+    ac: DaskArray, low: float = 0.5, high: float = 99.5, n_chunks: int = 200
+) -> np.ndarray:
     """Estimate percentiles from a sample of random chunks."""
     # pick random chunks
     all_chunks = list(np.ndindex(*ac.numblocks))
@@ -54,7 +61,7 @@ def sampled_percentiles(ac, low=0.5, high=99.5, n_chunks=200):
     return np.percentile(samples, [low, high])
 
 
-def reset_omero_channels(store, level="0"):
+def reset_omero_channels(store: NgioSupportedStore, level: str = "0") -> None:
     """Custom OMERO channel metadata reset for S8 converter"""
     ome_zarr_container = ngio.open_ome_zarr_container(store)
     img = ome_zarr_container.get_image(path=level)
@@ -147,7 +154,7 @@ def fcf_s8_converter(
             Defaults to True.
     """
     logging.info(f"Processing {tiff_folder_path=}")
-    tiff_folder_path = Path(tiff_folder_path)
+    tiff_folder = Path(tiff_folder_path)
 
     plate_url = "plate.ome.zarr"
     image_name = "s8_cells_mosaic.ome.zarr"
@@ -163,13 +170,13 @@ def fcf_s8_converter(
 
     # Convert the TIFFs to a mosaic OME-Zarr
     if convert_first_x_tiffs is not None:
-        tif_paths = sorted(tiff_folder_path.glob("*.tif*"))[:convert_first_x_tiffs]
+        tif_paths = sorted(tiff_folder.glob("*.tif*"))[:convert_first_x_tiffs]
     else:
-        tif_paths = sorted(tiff_folder_path.glob("*.tif*"))
+        tif_paths = sorted(tiff_folder.glob("*.tif*"))
 
     n_images = len(tif_paths)
     n_channels = 6
-    max_y, max_x = find_max_dimensions(tiff_folder_path)
+    max_y, max_x = find_max_dimensions(tiff_folder)
 
     # Create a mosaci grid & make it as square as possible
     n_cols = math.ceil(math.sqrt(n_images * max_y / max_x))
@@ -183,13 +190,13 @@ def fcf_s8_converter(
     logging.info(f"Total image size: {total_y} y x {total_x} x")
 
     # Create OME-Zarr
-    store = zarr.DirectoryStore(zarr_url)
+    store = LocalStore(zarr_url)
     if add_z_singleton:
         ome_zarr_container = ngio.create_empty_ome_zarr(
             store,
             shape=(n_channels, 1, total_y, total_x),
             axes_names=["c", "z", "y", "x"],
-            xy_pixelsize=xy_pixelsize,
+            pixelsize=xy_pixelsize,
             dtype="float32",
             chunks=(6, 1, 512, 512),  # adjust as needed
             overwrite=overwrite,
@@ -199,7 +206,7 @@ def fcf_s8_converter(
             store,
             shape=(n_channels, total_y, total_x),
             axes_names=["c", "y", "x"],
-            xy_pixelsize=xy_pixelsize,
+            pixelsize=xy_pixelsize,
             dtype="float32",
             chunks=(6, 512, 512),  # adjust as needed
             overwrite=overwrite,
@@ -230,10 +237,19 @@ def fcf_s8_converter(
         rois.append(
             Roi(
                 name=str(i),
-                x=x0 * xy_pixelsize,
-                y=y0 * xy_pixelsize,
-                x_length=x_true * xy_pixelsize,
-                y_length=y_true * xy_pixelsize,
+                slices=[
+                    RoiSlice(
+                        axis_name="x",
+                        start=x0 * xy_pixelsize,
+                        length=x_true * xy_pixelsize,
+                    ),
+                    RoiSlice(
+                        axis_name="y",
+                        start=y0 * xy_pixelsize,
+                        length=y_true * xy_pixelsize,
+                    ),
+                ],
+                space="world",
             )
         )
 

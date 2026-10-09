@@ -1,13 +1,19 @@
 # Do not edit - changes here will be overwritten by Copier
-_commit: v0.6.1
+_commit: v0.6.6
 _src_path: gh:fractal-analytics-platform/fractal-tasks-template
 author_email: joel.luethi@uzh.ch
 author_name: Joel Luethi
-mode: quick
+feature_task: Region Props Features
+include_feature_task: true
+include_image_processing_task: false
+include_segmentation_task: true
+mode: customize
 package_name: fcf_ome_zarr
+project_license: BSD-3-Clause
 project_name: fcf-ome-zarr
 project_short_description: Process UZH FCF images in OME-Zarr
 project_url: ''
-run_git_init: true
-run_pixi_init_task: true
+run_git_init: false
+run_pixi_init_task: false
+segmentation_task: Threshold Segmentation
 

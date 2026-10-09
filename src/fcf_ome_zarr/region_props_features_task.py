@@ -5,20 +5,17 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-from ngio import Roi, RoiPixels, open_ome_zarr_container
+from ngio import Roi, open_ome_zarr_container
 from ngio.experimental.iterators import FeatureExtractorIterator
-from ngio.tables import FeatureTable, RoiTable
+from ngio.tables import FeatureTable
 from ngio.transforms import ZoomTransform
 from pydantic import validate_call
 from skimage import measure
 
+logger = logging.getLogger("region_props_features_task")
 
-def region_props_features_func(
-    image: np.ndarray,
-    label: np.ndarray,
-    roi: Roi | RoiPixels,
-    roi_reference_table: RoiTable,
-) -> dict:
+
+def region_props_features_func(image: np.ndarray, label: np.ndarray, roi: Roi) -> dict:
     """Extract region properties features from a label image within a ROI."""
     assert image.ndim in (3, 4), "Image must be 3D yxc or 4D yxzc "
     assert image.ndim == label.ndim, (
@@ -55,9 +52,10 @@ def region_props_features_func(
     # for example, the ROI name and timepoint
     num_regions = len(props["label"])
     props["region"] = [roi.get_name()] * num_regions
-    props["time"] = [roi.t] * num_regions
 
-    # TODO: Calculate which ROI this object is in
+    t_slice = roi.get("t")
+    if t_slice is not None and t_slice.start is not None:
+        props["time"] = [t_slice.start] * num_regions
     return props
 
 
@@ -91,7 +89,10 @@ def region_props_features_task(
 ) -> None:
     """Extract region props. features from a OME-Zarr image and save them as a table.
 
-    This task requires a label image to be present in the OME-Zarr container.
+    This taks demostrates how to use the FeatureExtractorIterator to extract features.
+    We provide a separate utility package with some helper functions and classes to
+    streamline the development of measurement tasks. For more infos check:
+    /fractal-tasks-utils
 
     Args:
         zarr_url (str): URL to the OME-Zarr container
@@ -103,15 +104,15 @@ def region_props_features_task(
         overwrite (bool): Whether to overwrite an existing feature table.
             Defaults to True.
     """
-    logging.info(f"{zarr_url=}")
+    logger.info(f"{zarr_url=}")
 
     # Open the OME-Zarr container
     ome_zarr = open_ome_zarr_container(zarr_url)
-    logging.info(f"{ome_zarr=}")
+    logger.info(f"{ome_zarr=}")
 
     # Gete the image at the highest resolution available
     image = ome_zarr.get_image()
-    logging.info(f"{image=}")
+    logger.info(f"{image=}")
 
     # Get the label image at the closest resolution to the image
     # If the label image does't have an exact match in pixel size, we
@@ -119,7 +120,7 @@ def region_props_features_task(
     label_image = ome_zarr.get_label(
         name=label_image_name, pixel_size=image.pixel_size, strict=False
     )
-    logging.info(f"{label_image=}")
+    logger.info(f"{label_image=}")
 
     if not overwrite and output_table_name in ome_zarr.list_tables():
         # This is already checked in ome_zarr.add_table, but we check it here
@@ -167,7 +168,6 @@ def region_props_features_task(
             image=input_data,
             label=label_data,
             roi=roi,
-            roi_reference_table=refercene_roi_table,  # FIXME: Actually pass the table
         )
         # Feature ExtractorIterator does not handle writing, so we collect
         # the tables and write them at the end
@@ -182,7 +182,7 @@ def region_props_features_task(
     )
     # Save the DataFrame as a table in the OME-Zarr container
     ome_zarr.add_table(name=output_table_name, table=feature_table, overwrite=overwrite)
-    logging.info(f"Feature table {output_table_name} added to OME-Zarr container.")
+    logger.info(f"Feature table {output_table_name} added to OME-Zarr container.")
     return None
 
 
