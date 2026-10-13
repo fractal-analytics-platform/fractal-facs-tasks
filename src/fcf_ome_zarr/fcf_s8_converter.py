@@ -3,8 +3,11 @@
 import logging
 import math
 import random
+from collections.abc import Sequence
+from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional, Self
 
 import ngio
 import numpy as np
@@ -18,25 +21,131 @@ from pydantic import validate_call
 from zarr.storage import LocalStore
 
 
-def find_max_dimensions(tif_folder_path: Path) -> tuple[int, int]:
-    """Find the maximum dimensions (y, x) across all TIFF files in the folder."""
-    max_y = 0
-    max_x = 0
-    for tif_path in tif_folder_path.glob("*.tif*"):
-        with tifffile.TiffFile(tif_path) as tif:
-            shape = tif.pages[0].shape  # (channels, y, x) or (y, x, channels)
-            if len(shape) == 3:
-                # Assuming (channels, y, x)
-                _, y, x = shape
-            else:
-                y, x = shape
-            max_y = max(max_y, y)
-            max_x = max(max_x, x)
+# Might shadow PixelSize from ngio if not careful, keep for now
+class PixelSize(NamedTuple):
+    """Pixel size of the image in micrometers"""
 
-    return max_y, max_x
+    y: float
+    x: float
 
 
-def pad_to_shape(
+class TileSize(NamedTuple):
+    """Tile size of the mosaic image, equal to max (y, x) size across all TIFF files"""
+
+    y: int
+    x: int
+
+
+class MosaicSize(NamedTuple):
+    """Size of the mosaic OME-Zarr in pixels"""
+
+    y: int
+    x: int
+
+
+@dataclass(frozen=True)
+class MosaicLayout:
+    """Class storing the mosaic layout information"""
+
+    tile: TileSize
+    pixel_size: PixelSize
+    n_tiles: int
+    n_channels: int
+
+    @cached_property
+    def n_cols(self) -> int:
+        """Number of columns, chosen to make the mosaic as square as possible"""
+        return math.ceil(math.sqrt(self.n_tiles * self.tile.y / self.tile.x))
+
+    @cached_property
+    def n_rows(self) -> int:
+        """Number of rows needed to fit all tiles"""
+        return math.ceil(self.n_tiles / self.n_cols)
+
+    @cached_property
+    def size(self) -> MosaicSize:
+        """Total (y, x) size of the mosaic OME-Zarr, in pixels"""
+        return MosaicSize(y=self.n_rows * self.tile.y, x=self.n_cols * self.tile.x)
+
+    @classmethod
+    def from_paths(cls, tif_paths: Sequence[Path]) -> Self:
+        """Initialize MosaicLayout from a sequence of TIFF file paths"""
+        if not tif_paths:
+            raise ValueError("No TIFF files provided to build the mosaic layout")
+
+        # Tile size is the maximum (y, x) size across all TIFF files
+        max_y = 0
+        max_x = 0
+        n_channels: set[int] = set()
+        pixel_size: set[PixelSize] = set()
+        for tif_path in tif_paths:
+            with tifffile.TiffFile(tif_path) as tif:
+                page = tif.pages.first
+                max_y = max(max_y, page.imagelength)
+                max_x = max(max_x, page.imagewidth)
+                n_channels.add(len(tif.pages))
+                pixel_size.add(_get_pixel_size(tif=tif))
+
+        # Check that all images have the same number of channels and pixel size
+        if len(n_channels) != 1:
+            raise ValueError("The provided TIFF images have mismatching channels")
+        if len(pixel_size) != 1:
+            raise ValueError("The provided TIFF images have mismatching pixel size")
+
+        return cls(
+            tile=TileSize(y=max_y, x=max_x),
+            n_tiles=len(tif_paths),
+            n_channels=n_channels.pop(),
+            pixel_size=pixel_size.pop(),
+        )
+
+    def _get_tile_origin(self, row: int, col: int) -> tuple[int, int]:
+        """Get (y, x) origin of a tile at given row and col indexer"""
+        return row * self.tile.y, col * self.tile.x
+
+    def get_tile_slice(
+        self, row: int, col: int, add_z_singleton: bool = False
+    ) -> tuple[slice | int, ...]:
+        """Get slice for indexing tile at given row and col indexer"""
+        y0, x0 = self._get_tile_origin(row=row, col=col)
+        if add_z_singleton:
+            indexer = np.s_[:, 0, y0 : y0 + self.tile.y, x0 : x0 + self.tile.x]
+        else:
+            indexer = np.s_[:, y0 : y0 + self.tile.y, x0 : x0 + self.tile.x]
+        return indexer
+
+    def get_roi_slices(
+        self, row: int, col: int, img_shape: tuple[int, int]
+    ) -> list[RoiSlice]:
+        """Get ROI Slice for an image of shape img_shape at given row and col indexer"""
+        y0, x0 = self._get_tile_origin(row=row, col=col)
+        roi_slices = [
+            RoiSlice(
+                axis_name="x",
+                start=x0 * self.pixel_size.x,
+                length=img_shape[1] * self.pixel_size.x,
+            ),
+            RoiSlice(
+                axis_name="y",
+                start=y0 * self.pixel_size.y,
+                length=img_shape[0] * self.pixel_size.y,
+            ),
+        ]
+        return roi_slices
+
+
+def _get_pixel_size(tif: tifffile.TiffFile) -> PixelSize:
+    """Return the (y, x) pixel size in micrometers from the tif resolution tags."""
+    page = tif.pages.first
+    # Assume for now that all tifs are well-behaved
+    # Get resolution in pixels per micrometer
+    x_res, y_res = page.get_resolution(unit=tifffile.RESUNIT.MICROMETER)
+    # Pixel size in micrometer
+    pixel_size = PixelSize(y=1 / y_res, x=1 / x_res)
+    return pixel_size
+
+
+def _pad_to_shape(
     img: np.ndarray, target_shape: tuple[int, int], dtype: DTypeLike = np.float32
 ) -> np.ndarray:
     """Pad a 3D image (c, y, x) to the target shape (y, x) with zeros."""
@@ -126,7 +235,6 @@ def fcf_s8_converter(
     fake_a_plate: bool = True,
     add_z_singleton: bool = True,
     convert_first_x_tiffs: Optional[int] = None,
-    xy_pixelsize: float = 1.0,
     overwrite: bool = True,
 ) -> dict | None:
     """Apply a Gaussian blur to the input image and save the result as a OME-Zarr image.
@@ -148,8 +256,6 @@ def fcf_s8_converter(
         convert_first_x_tiffs: If provided, only the first X TIFF files in the
             folder are converted. This is useful for testing with a smaller
             number of files. If None, all TIFF files in the folder are converted.
-        xy_pixelsize: Pixel size in the XY dimensions. If possible, we should
-            extract this from the metadata instead.
         overwrite (bool): Whether to overwrite an existing OME-Zarr image.
             Defaults to True.
     """
@@ -157,11 +263,14 @@ def fcf_s8_converter(
     tiff_folder = Path(tiff_folder_path)
 
     plate_url = "plate.ome.zarr"
+    # Probably update name not to be hardcoded?
     image_name = "s8_cells_mosaic.ome.zarr"
     if fake_a_plate:
         zarr_url = Path(f"{zarr_dir}/{plate_url}/{image_name}")
 
-        plate = ngio.create_empty_plate(plate_url, name=plate_url, overwrite=True)
+        plate = ngio.create_empty_plate(
+            f"{zarr_dir}/{plate_url}", name=plate_url, overwrite=True
+        )
         well = plate.add_well(row="A", column=1)
         well.add_image(image_name)
 
@@ -169,86 +278,64 @@ def fcf_s8_converter(
         zarr_url = Path(f"{zarr_dir}/{image_name}")
 
     # Convert the TIFFs to a mosaic OME-Zarr
+    # Calcualte the mosaic layout parameters and extract image metadata
     if convert_first_x_tiffs is not None:
         tif_paths = sorted(tiff_folder.glob("*.tif*"))[:convert_first_x_tiffs]
     else:
         tif_paths = sorted(tiff_folder.glob("*.tif*"))
 
-    n_images = len(tif_paths)
-    n_channels = 6
-    max_y, max_x = find_max_dimensions(tiff_folder)
+    layout = MosaicLayout.from_paths(tif_paths)
 
-    # Create a mosaci grid & make it as square as possible
-    n_cols = math.ceil(math.sqrt(n_images * max_y / max_x))
-    n_rows = math.ceil(n_images / n_cols)
-
-    total_y = n_rows * max_y
-    total_x = n_cols * max_x
     logging.info(
-        f"Grid layout: {n_rows} rows x {n_cols} cols = {n_rows * n_cols} slots"
+        f"Grid layout: {layout.n_rows} rows x {layout.n_cols} cols = "
+        f"{layout.n_rows * layout.n_cols} slots"
     )
-    logging.info(f"Total image size: {total_y} y x {total_x} x")
+    logging.info(f"Total image size: {layout.size.y} y x {layout.size.x} x")
 
     # Create OME-Zarr
+    # TODO: consider more robust alternative to local store
     store = LocalStore(zarr_url)
-    if add_z_singleton:
-        ome_zarr_container = ngio.create_empty_ome_zarr(
-            store,
-            shape=(n_channels, 1, total_y, total_x),
-            axes_names=["c", "z", "y", "x"],
-            pixelsize=xy_pixelsize,
-            dtype="float32",
-            chunks=(6, 1, 512, 512),  # adjust as needed
-            overwrite=overwrite,
-        )
-    else:
-        ome_zarr_container = ngio.create_empty_ome_zarr(
-            store,
-            shape=(n_channels, total_y, total_x),
-            axes_names=["c", "y", "x"],
-            pixelsize=xy_pixelsize,
-            dtype="float32",
-            chunks=(6, 512, 512),  # adjust as needed
-            overwrite=overwrite,
-        )
+    ome_zarr_container = ngio.create_empty_ome_zarr(
+        store,
+        shape=(layout.n_channels, 1, *layout.size)
+        if add_z_singleton
+        else (layout.n_channels, *layout.size),
+        axes_names=["c", "z", "y", "x"] if add_z_singleton else ["c", "y", "x"],
+        pixelsize=layout.pixel_size,
+        dtype="float32",
+        chunks=(layout.n_channels, 1, 512, 512)
+        if add_z_singleton
+        else (layout.n_channels, 512, 512),  # adjust as needed
+        overwrite=overwrite,
+        ngff_version="0.5",
+    )
     ngio_image = ome_zarr_container.get_image()
-    za = ngio_image.zarr_array
+    zarr_array = ngio_image.zarr_array
 
     rois = []
 
     # Loop over TIFFs & place them inside the mosaic
     for i, tif_path in enumerate(tif_paths):
-        row, col = divmod(i, n_cols)
-        y0, x0 = row * max_y, col * max_x
+        row, col = divmod(i, layout.n_cols)
+        tile_slice = layout.get_tile_slice(
+            row=row, col=col, add_z_singleton=add_z_singleton
+        )
 
         with tifffile.TiffFile(tif_path) as tif:
             img = tif.asarray().astype(np.float32)
-            y_true, x_true = img.shape[-2:]
-            if img.shape[0] != n_channels and img.ndim == 2:
+            if img.ndim == 2:
                 img = img[None, :, :]  # add channel if missing
-        padded = pad_to_shape(img, (max_y, max_x))
 
-        if add_z_singleton:
-            za[:, 0, y0 : y0 + max_y, x0 : x0 + max_x] = padded
+        # Place padded image into the mosaic tile
+        padded = _pad_to_shape(img, target_shape=layout.tile)
+        zarr_array[tile_slice] = padded
 
-        else:
-            za[:, y0 : y0 + max_y, x0 : x0 + max_x] = padded
-
+        # Calculate roi slices
+        roi_slices = layout.get_roi_slices(row=row, col=col, img_shape=img.shape[-2:])
         rois.append(
             Roi(
-                name=str(i),
-                slices=[
-                    RoiSlice(
-                        axis_name="x",
-                        start=x0 * xy_pixelsize,
-                        length=x_true * xy_pixelsize,
-                    ),
-                    RoiSlice(
-                        axis_name="y",
-                        start=y0 * xy_pixelsize,
-                        length=y_true * xy_pixelsize,
-                    ),
-                ],
+                name=str(i),  # TODO: find out how to match this with the spectra
+                slices=roi_slices,
                 space="world",
             )
         )
