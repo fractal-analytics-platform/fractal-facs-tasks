@@ -19,7 +19,7 @@ TASK_LIST = [
     ),
     ConverterNonParallelTask(
         name="FCF S8 Converter",
-        executable="fcf_s8_converter.py",
+        executable="converters/fcf_s8_converter.py",
         meta={"cpus_per_task": 1, "mem": 4000},
         category="Conversion",
         tags=["FACS"],

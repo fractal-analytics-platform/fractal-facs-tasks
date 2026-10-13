@@ -1,7 +1,6 @@
-"""This is the Python module for my_task."""
+"""Converter for the BD S8 cell sorter imaging data at UZH FCF"""
 
 import logging
-import math
 import random
 from pathlib import Path
 from typing import Optional
@@ -11,39 +10,12 @@ import numpy as np
 import tifffile
 import zarr
 from dask.array.core import Array as DaskArray
-from ngio import NgioSupportedStore, Roi, RoiSlice
+from ngio import NgioSupportedStore, Roi
 from ngio.tables import RoiTable
-from numpy.typing import DTypeLike
 from pydantic import validate_call
 from zarr.storage import LocalStore
 
-
-def find_max_dimensions(tif_folder_path: Path) -> tuple[int, int]:
-    """Find the maximum dimensions (y, x) across all TIFF files in the folder."""
-    max_y = 0
-    max_x = 0
-    for tif_path in tif_folder_path.glob("*.tif*"):
-        with tifffile.TiffFile(tif_path) as tif:
-            shape = tif.pages[0].shape  # (channels, y, x) or (y, x, channels)
-            if len(shape) == 3:
-                # Assuming (channels, y, x)
-                _, y, x = shape
-            else:
-                y, x = shape
-            max_y = max(max_y, y)
-            max_x = max(max_x, x)
-
-    return max_y, max_x
-
-
-def pad_to_shape(
-    img: np.ndarray, target_shape: tuple[int, int], dtype: DTypeLike = np.float32
-) -> np.ndarray:
-    """Pad a 3D image (c, y, x) to the target shape (y, x) with zeros."""
-    c, y, x = img.shape
-    padded = np.zeros((c, *target_shape), dtype=dtype)
-    padded[:, :y, :x] = img
-    return padded
+from fcf_ome_zarr.converters.mosaic import MosaicLayout, pad_to_shape
 
 
 def sampled_percentiles(
@@ -126,7 +98,6 @@ def fcf_s8_converter(
     fake_a_plate: bool = True,
     add_z_singleton: bool = True,
     convert_first_x_tiffs: Optional[int] = None,
-    xy_pixelsize: float = 1.0,
     overwrite: bool = True,
 ) -> dict | None:
     """Apply a Gaussian blur to the input image and save the result as a OME-Zarr image.
@@ -148,8 +119,6 @@ def fcf_s8_converter(
         convert_first_x_tiffs: If provided, only the first X TIFF files in the
             folder are converted. This is useful for testing with a smaller
             number of files. If None, all TIFF files in the folder are converted.
-        xy_pixelsize: Pixel size in the XY dimensions. If possible, we should
-            extract this from the metadata instead.
         overwrite (bool): Whether to overwrite an existing OME-Zarr image.
             Defaults to True.
     """
@@ -157,11 +126,14 @@ def fcf_s8_converter(
     tiff_folder = Path(tiff_folder_path)
 
     plate_url = "plate.ome.zarr"
+    # Probably update name not to be hardcoded?
     image_name = "s8_cells_mosaic.ome.zarr"
     if fake_a_plate:
         zarr_url = Path(f"{zarr_dir}/{plate_url}/{image_name}")
 
-        plate = ngio.create_empty_plate(plate_url, name=plate_url, overwrite=True)
+        plate = ngio.create_empty_plate(
+            f"{zarr_dir}/{plate_url}", name=plate_url, overwrite=True
+        )
         well = plate.add_well(row="A", column=1)
         well.add_image(image_name)
 
@@ -169,86 +141,64 @@ def fcf_s8_converter(
         zarr_url = Path(f"{zarr_dir}/{image_name}")
 
     # Convert the TIFFs to a mosaic OME-Zarr
+    # Calcualte the mosaic layout parameters and extract image metadata
     if convert_first_x_tiffs is not None:
         tif_paths = sorted(tiff_folder.glob("*.tif*"))[:convert_first_x_tiffs]
     else:
         tif_paths = sorted(tiff_folder.glob("*.tif*"))
 
-    n_images = len(tif_paths)
-    n_channels = 6
-    max_y, max_x = find_max_dimensions(tiff_folder)
+    layout = MosaicLayout.from_paths(tif_paths)
 
-    # Create a mosaci grid & make it as square as possible
-    n_cols = math.ceil(math.sqrt(n_images * max_y / max_x))
-    n_rows = math.ceil(n_images / n_cols)
-
-    total_y = n_rows * max_y
-    total_x = n_cols * max_x
     logging.info(
-        f"Grid layout: {n_rows} rows x {n_cols} cols = {n_rows * n_cols} slots"
+        f"Grid layout: {layout.n_rows} rows x {layout.n_cols} cols = "
+        f"{layout.n_rows * layout.n_cols} slots"
     )
-    logging.info(f"Total image size: {total_y} y x {total_x} x")
+    logging.info(f"Total image size: {layout.size.y} y x {layout.size.x} x")
 
     # Create OME-Zarr
+    # TODO: consider more robust alternative to local store
     store = LocalStore(zarr_url)
-    if add_z_singleton:
-        ome_zarr_container = ngio.create_empty_ome_zarr(
-            store,
-            shape=(n_channels, 1, total_y, total_x),
-            axes_names=["c", "z", "y", "x"],
-            pixelsize=xy_pixelsize,
-            dtype="float32",
-            chunks=(6, 1, 512, 512),  # adjust as needed
-            overwrite=overwrite,
-        )
-    else:
-        ome_zarr_container = ngio.create_empty_ome_zarr(
-            store,
-            shape=(n_channels, total_y, total_x),
-            axes_names=["c", "y", "x"],
-            pixelsize=xy_pixelsize,
-            dtype="float32",
-            chunks=(6, 512, 512),  # adjust as needed
-            overwrite=overwrite,
-        )
+    ome_zarr_container = ngio.create_empty_ome_zarr(
+        store,
+        shape=(layout.n_channels, 1, *layout.size)
+        if add_z_singleton
+        else (layout.n_channels, *layout.size),
+        axes_names=["c", "z", "y", "x"] if add_z_singleton else ["c", "y", "x"],
+        pixelsize=layout.pixel_size,
+        dtype="float32",
+        chunks=(layout.n_channels, 1, 512, 512)
+        if add_z_singleton
+        else (layout.n_channels, 512, 512),  # adjust as needed
+        overwrite=overwrite,
+        ngff_version="0.5",
+    )
     ngio_image = ome_zarr_container.get_image()
-    za = ngio_image.zarr_array
+    zarr_array = ngio_image.zarr_array
 
     rois = []
 
     # Loop over TIFFs & place them inside the mosaic
     for i, tif_path in enumerate(tif_paths):
-        row, col = divmod(i, n_cols)
-        y0, x0 = row * max_y, col * max_x
+        row, col = divmod(i, layout.n_cols)
+        tile_slice = layout.get_tile_slice(
+            row=row, col=col, add_z_singleton=add_z_singleton
+        )
 
         with tifffile.TiffFile(tif_path) as tif:
             img = tif.asarray().astype(np.float32)
-            y_true, x_true = img.shape[-2:]
-            if img.shape[0] != n_channels and img.ndim == 2:
+            if img.ndim == 2:
                 img = img[None, :, :]  # add channel if missing
-        padded = pad_to_shape(img, (max_y, max_x))
 
-        if add_z_singleton:
-            za[:, 0, y0 : y0 + max_y, x0 : x0 + max_x] = padded
+        # Place padded image into the mosaic tile
+        padded = pad_to_shape(img, target_shape=layout.tile)
+        zarr_array[tile_slice] = padded
 
-        else:
-            za[:, y0 : y0 + max_y, x0 : x0 + max_x] = padded
-
+        # Calculate roi slices
+        roi_slices = layout.get_roi_slices(row=row, col=col, img_shape=img.shape[-2:])
         rois.append(
             Roi(
-                name=str(i),
-                slices=[
-                    RoiSlice(
-                        axis_name="x",
-                        start=x0 * xy_pixelsize,
-                        length=x_true * xy_pixelsize,
-                    ),
-                    RoiSlice(
-                        axis_name="y",
-                        start=y0 * xy_pixelsize,
-                        length=y_true * xy_pixelsize,
-                    ),
-                ],
+                name=str(i),  # TODO: find out how to match this with the spectra
+                slices=roi_slices,
                 space="world",
             )
         )
