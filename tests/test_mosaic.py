@@ -4,7 +4,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from fcf_ome_zarr.fcf_s8_converter import MosaicLayout, PixelSize, TileSize
+from fcf_ome_zarr.converters.mosaic import (
+    MosaicLayout,
+    PixelSize,
+    TileSize,
+    pad_to_shape,
+)
 
 
 def make_layout(
@@ -109,3 +114,18 @@ def test_from_paths_with_mismatching_pixel_size_raises(
     ]
     with pytest.raises(ValueError, match="mismatching pixel size"):
         MosaicLayout.from_paths(tif_paths)
+
+
+def test_pad_to_shape_keeps_image_in_top_left_corner():
+    img = np.ones((2, 3, 4), dtype=np.float32)
+    padded = pad_to_shape(img, target_shape=(5, 6))
+
+    assert padded.shape == (2, 5, 6)
+    assert np.array_equal(padded[:, :3, :4], img)
+    assert padded.sum() == img.sum()
+
+
+def test_pad_to_shape_with_image_larger_than_target_raises():
+    img = np.ones((2, 3, 4), dtype=np.float32)
+    with pytest.raises(ValueError):
+        pad_to_shape(img, target_shape=(2, 2))

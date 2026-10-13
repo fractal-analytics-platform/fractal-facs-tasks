@@ -6,22 +6,7 @@ import pytest
 import tifffile
 from ngio import open_ome_zarr_container
 
-from fcf_ome_zarr.fcf_s8_converter import _pad_to_shape, fcf_s8_converter
-
-
-def test_pad_to_shape_keeps_image_in_top_left_corner():
-    img = np.ones((2, 3, 4), dtype=np.float32)
-    padded = _pad_to_shape(img, target_shape=(5, 6))
-
-    assert padded.shape == (2, 5, 6)
-    assert np.array_equal(padded[:, :3, :4], img)
-    assert padded.sum() == img.sum()
-
-
-def test_pad_to_shape_with_image_larger_than_target_raises():
-    img = np.ones((2, 3, 4), dtype=np.float32)
-    with pytest.raises(ValueError):
-        _pad_to_shape(img, target_shape=(2, 2))
+from fcf_ome_zarr.converters.fcf_s8_converter import fcf_s8_converter
 
 
 def run_converter(tmp_path: Path, tiff_dir: Path, **kwargs) -> Path:

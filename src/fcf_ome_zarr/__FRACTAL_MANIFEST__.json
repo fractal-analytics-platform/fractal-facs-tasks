@@ -140,7 +140,7 @@
       ],
       "docs_info": "### Purpose\n- Convert data from S8 Flow Cytometer (TIFF files) to OME-Zarr format.\n\n### Outputs\n- A single mosaic OME-Zarr file containing all converted images. Optionally in plate format\n\n### Limitations\n- POC implementation, only tested on a single dataset",
       "type": "converter_non_parallel",
-      "executable_non_parallel": "fcf_s8_converter.py",
+      "executable_non_parallel": "converters/fcf_s8_converter.py",
       "meta_non_parallel": {
         "cpus_per_task": 1,
         "mem": 4000
@@ -174,12 +174,6 @@
             "title": "Convert First X Tiffs",
             "type": "integer",
             "description": "If provided, only the first X TIFF files in the folder are converted. This is useful for testing with a smaller number of files. If None, all TIFF files in the folder are converted."
-          },
-          "xy_pixelsize": {
-            "default": 1.0,
-            "title": "Xy Pixelsize",
-            "type": "number",
-            "description": "Pixel size in the XY dimensions. If possible, we should extract this from the metadata instead."
           },
           "overwrite": {
             "default": true,
