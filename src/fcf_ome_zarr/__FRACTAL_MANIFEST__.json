@@ -198,6 +198,19 @@
             "type": "string",
             "description": "Path to the folder containing the TIFF files of the S8 FACS to be converted."
           },
+          "mosaic_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mosaic Name",
+            "description": "Name of the output OME-Zarr, without the \".ome.zarr\" extension. Used for the plate if `fake_a_plate` is True, otherwise for the image. If None, the name of the TIFF folder is used, with whitespace replaced by underscores."
+          },
           "fake_a_plate": {
             "default": true,
             "title": "Fake A Plate",

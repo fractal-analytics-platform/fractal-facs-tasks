@@ -1,6 +1,7 @@
 """Converter for the BD S8 cell sorter imaging data at UZH FCF"""
 
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +16,15 @@ from zarr.storage import LocalStore
 from fcf_ome_zarr.converters.mosaic import MosaicLayout, pad_to_shape
 
 
+def sanitize_folder_name(folder_name: str) -> str:
+    """Turn a folder name into a name that is safe to use for the OME-Zarr.
+
+    Whitespace is stripped from both ends and inner runs of whitespace are
+    replaced by a single underscore.
+    """
+    return re.sub(r"\s+", "_", folder_name.strip())
+
+
 @validate_call
 def fcf_s8_converter(
     *,
@@ -22,6 +32,7 @@ def fcf_s8_converter(
     zarr_dir: str,
     # Input parameters
     tiff_folder_path: str,
+    mosaic_name: Optional[str] = None,
     fake_a_plate: bool = True,
     add_z_singleton: bool = True,
     convert_first_x_tiffs: Optional[int] = None,
@@ -35,6 +46,10 @@ def fcf_s8_converter(
             (standard argument for Fractal tasks, managed by Fractal server).
         tiff_folder_path: Path to the folder containing the TIFF files of the
             S8 FACS to be converted.
+        mosaic_name: Name of the output OME-Zarr, without the ".ome.zarr"
+            extension. Used for the plate if `fake_a_plate` is True, otherwise
+            for the image. If None, the name of the TIFF folder is used, with
+            whitespace replaced by underscores.
         fake_a_plate: Whether to create a fake plate structure with a single
             well "A1" containing the mosaic image. This is useful to use some
             tools that need plates (e.g. Fractal feature explorer).
@@ -52,20 +67,25 @@ def fcf_s8_converter(
     logging.info(f"Processing {tiff_folder_path=}")
     tiff_folder = Path(tiff_folder_path)
 
-    plate_url = "plate.ome.zarr"
-    # Probably update name not to be hardcoded?
-    image_name = "s8_cells_mosaic.ome.zarr"
+    if mosaic_name is None:
+        mosaic_name = sanitize_folder_name(tiff_folder.name)
+    # Either the fake plate or the image, depending on fake_a_plate
+    mosaic_url = f"{mosaic_name}.ome.zarr"
+    # Image list attributes, only set for the fake plate
+    attributes: dict[str, str] = {}
     if fake_a_plate:
-        zarr_url = Path(f"{zarr_dir}/{plate_url}/{image_name}")
-
         plate = ngio.create_empty_plate(
-            f"{zarr_dir}/{plate_url}", name=plate_url, overwrite=True
+            f"{zarr_dir}/{mosaic_url}",
+            name=mosaic_name,
+            ngff_version="0.5",
+            overwrite=overwrite,
         )
-        well = plate.add_well(row="A", column=1)
-        well.add_image(image_name)
+        image_path = plate.add_image(row="A", column=1, image_path="0")
+        zarr_url = Path(f"{zarr_dir}/{mosaic_url}/{image_path}")
+        attributes = {"plate": mosaic_url, "well": "".join(image_path.split("/")[:2])}
 
     else:
-        zarr_url = Path(f"{zarr_dir}/{image_name}")
+        zarr_url = Path(f"{zarr_dir}/{mosaic_url}")
 
     # Convert the TIFFs to a mosaic OME-Zarr
     # Calcualte the mosaic layout parameters and extract image metadata
@@ -145,18 +165,9 @@ def fcf_s8_converter(
     # Set contrast limits for viewers
     ome_zarr_container.set_channel_windows_with_percentiles(percentiles=(0.05, 99.995))
 
-    if fake_a_plate:
-        image_list_update_dict = {
-            "image_list_updates": [
-                {
-                    "zarr_url": str(zarr_url),
-                    "attributes": {"plate": "plate.ome.zarr", "well": "A1"},
-                }
-            ]
-        }
-    else:
-        image_list_update_dict = {"image_list_updates": [{"zarr_url": str(zarr_url)}]}
-    return image_list_update_dict
+    return {
+        "image_list_updates": [{"zarr_url": str(zarr_url), "attributes": attributes}]
+    }
 
 
 if __name__ == "__main__":

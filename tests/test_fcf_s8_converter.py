@@ -1,12 +1,16 @@
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
 import pytest
 import tifffile
-from ngio import open_ome_zarr_container
+from ngio import open_ome_zarr_container, open_ome_zarr_plate
 
-from fcf_ome_zarr.converters.fcf_s8_converter import fcf_s8_converter
+from fcf_ome_zarr.converters.fcf_s8_converter import (
+    fcf_s8_converter,
+    sanitize_folder_name,
+)
 
 
 def run_converter(tmp_path: Path, tiff_dir: Path, **kwargs) -> Path:
@@ -71,6 +75,39 @@ def test_fov_rois_match_source_tiffs(
     assert np.count_nonzero(image.get_as_numpy()) == n_nonzero
 
 
+def test_converter_writes_image_inside_fake_plate(
+    tmp_path: Path, example_data_dir: Path
+):
+    result = fcf_s8_converter(
+        tiff_folder_path=str(example_data_dir),
+        zarr_dir=str(tmp_path),
+        fake_a_plate=True,
+    )
+    assert result is not None
+    # The plate is named after the TIFF folder by default
+    plate_url = f"{example_data_dir.name}.ome.zarr"
+    (image_update,) = result["image_list_updates"]
+    assert image_update["zarr_url"] == str(tmp_path / plate_url / "A/01/0")
+    assert image_update["attributes"] == {"plate": plate_url, "well": "A01"}
+
+    plate = open_ome_zarr_plate(tmp_path / plate_url)
+    assert plate.wells_paths() == ["A/01"]
+    assert plate.images_paths() == ["A/01/0"]
+
+    image = open_ome_zarr_container(image_update["zarr_url"]).get_image()
+    assert image.shape == (6, 1, 146, 208)
+
+
+@pytest.mark.parametrize("mosaic_name", [None, "my_mosaic"])
+def test_mosaic_name_sets_image_name(
+    tmp_path: Path, example_data_dir: Path, mosaic_name: str | None
+):
+    zarr_url = run_converter(tmp_path, example_data_dir, mosaic_name=mosaic_name)
+
+    expected_name = mosaic_name or example_data_dir.name
+    assert zarr_url == tmp_path / f"{expected_name}.ome.zarr"
+
+
 def test_converter_writes_roi_tables(tmp_path: Path, example_data_dir: Path):
     ome_zarr = open_ome_zarr_container(run_converter(tmp_path, example_data_dir))
 
@@ -123,3 +160,25 @@ def test_converter_with_single_channel_tiffs(
 
     # 2 tiles of (20, 30) pixels in a 1 x 2 grid
     assert image.shape == (1, 1, 20, 60)
+
+
+@pytest.mark.parametrize(
+    "folder_name, expected",
+    [
+        ("example_data", "example_data"),
+        ("Demo recording", "Demo_recording"),
+        ("Demo  recording\t2", "Demo_recording_2"),
+        (" Demo recording ", "Demo_recording"),
+    ],
+)
+def test_sanitize_folder_name(folder_name: str, expected: str):
+    assert sanitize_folder_name(folder_name) == expected
+
+
+def test_mosaic_name_from_folder_with_spaces(tmp_path: Path, example_data_dir: Path):
+    tiff_dir = tmp_path / "Demo recording"
+    shutil.copytree(example_data_dir, tiff_dir)
+
+    zarr_url = run_converter(tmp_path, tiff_dir)
+
+    assert zarr_url == tmp_path / "Demo_recording.ome.zarr"
