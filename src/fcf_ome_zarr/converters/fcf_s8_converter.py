@@ -38,7 +38,10 @@ def fcf_s8_converter(
     convert_first_x_tiffs: Optional[int] = None,
     overwrite: bool = True,
 ) -> dict | None:
-    """Apply a Gaussian blur to the input image and save the result as a OME-Zarr image.
+    """Convert BD S8 TIFF files into a single mosaic OME-Zarr image.
+
+    Each TIFF is placed in its own tile of the mosaic and recorded as a ROI in
+    the "FOV_ROI_table". Channel labels are read from the TIFF PageName tags.
 
     Args:
         zarr_dir: path of the directory where the new OME-Zarrs will be
@@ -51,7 +54,7 @@ def fcf_s8_converter(
             for the image. If None, the name of the TIFF folder is used, with
             whitespace replaced by underscores.
         fake_a_plate: Whether to create a fake plate structure with a single
-            well "A1" containing the mosaic image. This is useful to use some
+            well "A01" containing the mosaic image. This is useful to use some
             tools that need plates (e.g. Fractal feature explorer).
             Defaults to True.
         add_z_singleton: Whether to add a singleton Z dimension to the OME-Zarr.
@@ -61,8 +64,8 @@ def fcf_s8_converter(
         convert_first_x_tiffs: If provided, only the first X TIFF files in the
             folder are converted. This is useful for testing with a smaller
             number of files. If None, all TIFF files in the folder are converted.
-        overwrite (bool): Whether to overwrite an existing OME-Zarr image.
-            Defaults to True.
+        overwrite (bool): Whether to overwrite an existing OME-Zarr image (and
+            fake plate, if `fake_a_plate` is True). Defaults to True.
     """
     logging.info(f"Processing {tiff_folder_path=}")
     tiff_folder = Path(tiff_folder_path)
