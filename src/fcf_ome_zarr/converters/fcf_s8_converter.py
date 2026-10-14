@@ -161,7 +161,7 @@ def fcf_s8_converter(
         "image_ROI_table", image_roi_table, overwrite=overwrite
     )
 
-    ngio_image.consolidate()
+    ngio_image.consolidate(mode="auto")
     # Set contrast limits for viewers
     ome_zarr_container.set_channel_windows_with_percentiles(percentiles=(0.05, 99.995))
 
