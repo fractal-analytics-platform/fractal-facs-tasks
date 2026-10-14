@@ -113,10 +113,10 @@ class MosaicLayout:
 
     def get_roi_slices(
         self, row: int, col: int, img_shape: tuple[int, int]
-    ) -> list[RoiSlice]:
+    ) -> tuple[RoiSlice, ...]:
         """Get ROI Slice for an image of shape img_shape at given row and col indexer"""
         y0, x0 = self._get_tile_origin(row=row, col=col)
-        roi_slices = [
+        roi_slices = (
             RoiSlice(
                 axis_name="x",
                 start=x0 * self.pixel_size.x,
@@ -127,7 +127,7 @@ class MosaicLayout:
                 start=y0 * self.pixel_size.y,
                 length=img_shape[0] * self.pixel_size.y,
             ),
-        ]
+        )
         return roi_slices
 
 
@@ -147,9 +147,10 @@ def _get_channel_labels(tif: tifffile.TiffFile) -> tuple[str, ...]:
 
     Pages without a PageName tag fall back to a generic "channel_{i}" label.
     """
-    labels = []
+    labels: list[str] = []
     for i, page in enumerate(tif.pages):
-        page_name = page.tags.get("PageName")
+        # aspage() narrows TiffPage | TiffFrame to TiffPage, which holds the tags
+        page_name = page.aspage().tags.get("PageName")
         labels.append(page_name.value if page_name is not None else f"channel_{i}")
     return tuple(labels)
 

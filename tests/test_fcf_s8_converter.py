@@ -53,7 +53,7 @@ def test_fov_rois_match_source_tiffs(
     )
     ome_zarr = open_ome_zarr_container(zarr_url)
     image = ome_zarr.get_image()
-    rois = ome_zarr.get_table("FOV_ROI_table").rois()
+    rois = ome_zarr.get_roi_table("FOV_ROI_table").rois()
 
     tif_paths = sorted(example_data_dir.glob("*.tif*"))
     assert [roi.name for roi in rois] == [str(i) for i in range(len(tif_paths))]
@@ -61,7 +61,7 @@ def test_fov_rois_match_source_tiffs(
     n_nonzero = 0
     for roi, tif_path in zip(rois, tif_paths, strict=True):
         img = tifffile.imread(tif_path)
-        roi_data = image.get_roi(roi)
+        roi_data = image.get_roi_as_numpy(roi)
         if add_z_singleton:
             roi_data = roi_data[:, 0]
         assert np.array_equal(roi_data, img)
@@ -75,8 +75,8 @@ def test_converter_writes_roi_tables(tmp_path: Path, example_data_dir: Path):
     ome_zarr = open_ome_zarr_container(run_converter(tmp_path, example_data_dir))
 
     assert set(ome_zarr.list_tables()) == {"FOV_ROI_table", "image_ROI_table"}
-    assert len(ome_zarr.get_table("FOV_ROI_table").rois()) == 4
-    assert len(ome_zarr.get_table("image_ROI_table").rois()) == 1
+    assert len(ome_zarr.get_roi_table("FOV_ROI_table").rois()) == 4
+    assert len(ome_zarr.get_roi_table("image_ROI_table").rois()) == 1
 
 
 def test_converter_writes_channel_metadata(
