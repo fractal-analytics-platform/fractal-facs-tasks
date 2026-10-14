@@ -103,6 +103,14 @@ docstring-code-format = true
 docstring-code-line-length = 89
 skip-magic-trailing-comma = false # default is false
 
+# https://docs.pytest.org/en/stable/reference/customize.html
+[tool.pytest.ini_options]
+filterwarnings = [
+    # scikit-image assigns `.shape` in marching cubes (used by regionprops),
+    # deprecated in NumPy 2.5. Scoped to that message and module only.
+    "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning:skimage.measure._marching_cubes_lewiner",
+]
+
 [tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["osx-arm64", "linux-64"]
