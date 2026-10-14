@@ -79,6 +79,21 @@ def test_converter_writes_roi_tables(tmp_path: Path, example_data_dir: Path):
     assert len(ome_zarr.get_table("image_ROI_table").rois()) == 1
 
 
+def test_converter_writes_channel_metadata(
+    tmp_path: Path, example_data_dir: Path, example_channel_labels: tuple[str, ...]
+):
+    image = open_ome_zarr_container(
+        run_converter(tmp_path, example_data_dir)
+    ).get_image()
+
+    assert tuple(image.channel_labels) == example_channel_labels
+    data = image.get_as_numpy()
+    for c, channel in enumerate(image.channels_meta.channels):
+        window = channel.channel_visualisation
+        # Windows are computed from the data, so they lie within its value range
+        assert data[c].min() <= window.start < window.end <= data[c].max()
+
+
 def test_convert_first_x_tiffs_skips_remaining_files(
     tmp_path: Path, mixed_tiff_dir: Path
 ):

@@ -1,91 +1,18 @@
 """Converter for the BD S8 cell sorter imaging data at UZH FCF"""
 
 import logging
-import random
 from pathlib import Path
 from typing import Optional
 
 import ngio
 import numpy as np
 import tifffile
-import zarr
-from dask.array.core import Array as DaskArray
-from ngio import NgioSupportedStore, Roi
+from ngio import Roi
 from ngio.tables import RoiTable
 from pydantic import validate_call
 from zarr.storage import LocalStore
 
 from fcf_ome_zarr.converters.mosaic import MosaicLayout, pad_to_shape
-
-
-def sampled_percentiles(
-    ac: DaskArray, low: float = 0.5, high: float = 99.5, n_chunks: int = 200
-) -> np.ndarray:
-    """Estimate percentiles from a sample of random chunks."""
-    # pick random chunks
-    all_chunks = list(np.ndindex(*ac.numblocks))
-    chosen = random.sample(all_chunks, min(len(all_chunks), n_chunks))
-    samples = []
-    for idx in chosen:
-        block = ac.blocks[idx].compute()
-        samples.append(block.ravel())
-    samples = np.concatenate(samples)
-    return np.percentile(samples, [low, high])
-
-
-def reset_omero_channels(store: NgioSupportedStore, level: str = "0") -> None:
-    """Custom OMERO channel metadata reset for S8 converter"""
-    ome_zarr_container = ngio.open_ome_zarr_container(store)
-    img = ome_zarr_container.get_image(path=level)
-    arr_dask = img.get_as_dask()  # (C, Y, X) float32 in your case
-
-    # Compute robust ranges; adjust as you like
-    p_lo, p_hi = 0.05, 99.995
-    starts, ends, mins, maxs = [], [], [], []
-    for c in range(arr_dask.shape[0]):
-        ac = arr_dask[c]
-        lo, hi = sampled_percentiles(ac, p_lo, p_hi)
-        mn, mx = ac.min().compute(), ac.max().compute()
-        starts.append(float(lo))
-        ends.append(float(hi))
-        mins.append(float(mn))
-        maxs.append(float(mx))
-
-    # Optional: supply labels/colors/active; otherwise leave as None
-    labels = ["Lightloss", "SSC", "FSC", "FL1", "FL2", "FL3"]
-    colors = ["FFFFFF", "00FF00", "0000FF", "FF0000", "FF00FF", "00FFFF"]
-    active = [True, True, True, True, False, False]
-
-    # Hard-code lightloss rescaling
-    starts[0] = 0.0
-    ends[0] = 0.2
-
-    # Hard-code all starts to 0
-    for i in range(len(starts)):
-        starts[i] = 0.0
-
-    # Hard-code all max to 1 (to avoid validation errors)
-    for i in range(len(maxs)):
-        maxs[i] = 1.0
-
-    # Write to the Zarr root attrs
-    root = zarr.open_group(store, mode="r+")
-    root.attrs["omero"] = {
-        "channels": [
-            {
-                "label": labels[c],
-                "color": (colors[c] if colors else None),
-                "active": (active[c] if active else None),
-                "window": {
-                    "min": mins[c],
-                    "max": maxs[c],
-                    "start": starts[c],
-                    "end": ends[c] + 0.1,
-                },
-            }
-            for c in range(len(mins))
-        ]
-    }
 
 
 @validate_call
@@ -165,6 +92,7 @@ def fcf_s8_converter(
         else (layout.n_channels, *layout.size),
         axes_names=["c", "z", "y", "x"] if add_z_singleton else ["c", "y", "x"],
         pixelsize=layout.pixel_size,
+        channels_meta=list(layout.channel_labels),
         dtype="float32",
         chunks=(layout.n_channels, 1, 512, 512)
         if add_z_singleton
@@ -213,8 +141,9 @@ def fcf_s8_converter(
         "image_ROI_table", image_roi_table, overwrite=overwrite
     )
 
-    ngio_image.consolidate(mode="auto")
-    reset_omero_channels(store, level="3")
+    ngio_image.consolidate()
+    # Set contrast limits for viewers
+    ome_zarr_container.set_channel_windows_with_percentiles(percentiles=(0.05, 99.995))
 
     if fake_a_plate:
         image_list_update_dict = {

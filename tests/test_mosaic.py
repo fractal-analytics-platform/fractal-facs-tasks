@@ -22,7 +22,7 @@ def make_layout(
         tile=TileSize(*tile),
         pixel_size=PixelSize(*pixel_size),
         n_tiles=n_tiles,
-        n_channels=n_channels,
+        channel_labels=tuple(f"channel_{i}" for i in range(n_channels)),
     )
 
 
@@ -74,7 +74,9 @@ def test_tile_slices_stay_in_bounds_without_overlap(add_z_singleton: bool):
     assert hits.sum() == layout.n_tiles * 3 * 10 * 20
 
 
-def test_from_paths_reads_tile_size_and_metadata(example_data_dir: Path):
+def test_from_paths_reads_tile_size_and_metadata(
+    example_data_dir: Path, example_channel_labels: tuple[str, ...]
+):
     tif_paths = sorted(example_data_dir.glob("*.tif*"))
     layout = MosaicLayout.from_paths(tif_paths)
 
@@ -83,6 +85,7 @@ def test_from_paths_reads_tile_size_and_metadata(example_data_dir: Path):
     assert layout.tile == (73, 104)
     assert layout.n_tiles == 4
     assert layout.n_channels == 6
+    assert layout.channel_labels == example_channel_labels
     assert layout.pixel_size == pytest.approx((113.636, 136.364), abs=1e-3)
 
 
@@ -114,6 +117,15 @@ def test_from_paths_with_mismatching_pixel_size_raises(
     ]
     with pytest.raises(ValueError, match="mismatching pixel size"):
         MosaicLayout.from_paths(tif_paths)
+
+
+def test_from_paths_without_page_names_uses_default_labels(
+    make_tiff: Callable[..., Path],
+):
+    tif_paths = [make_tiff("a.tif", shape=(3, 20, 30))]
+    layout = MosaicLayout.from_paths(tif_paths)
+
+    assert layout.channel_labels == ("channel_0", "channel_1", "channel_2")
 
 
 def test_pad_to_shape_keeps_image_in_top_left_corner():
