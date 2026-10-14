@@ -45,9 +45,9 @@ authors = [
 # Required Python version and dependencies
 requires-python = ">=3.11,<3.15"
 dependencies = [
-    "ngio>=0.5.7,<0.6.0",
-    "scikit-image>=0.26.0",
-    "fractal-task-tools>=0.4.0,<0.5.0",
+    "ngio>=1.1.1,<2",
+    "scikit-image>=0.26.0,<0.27",
+    "fractal-task-tools>=0.5.1,<0.6",
 ]
 
 # Optional dependencies (e.g. for `pip install -e ".[dev]"`, see
