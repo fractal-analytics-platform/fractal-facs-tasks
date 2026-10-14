@@ -213,7 +213,7 @@ def fcf_s8_converter(
         "image_ROI_table", image_roi_table, overwrite=overwrite
     )
 
-    ngio_image.consolidate()
+    ngio_image.consolidate(mode="auto")
     reset_omero_channels(store, level="3")
 
     if fake_a_plate:
