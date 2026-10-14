@@ -1130,14 +1130,14 @@ packages:
   - fractal-task-tools>=0.5.1,<0.6
   - ngio>=1.1.1,<2
   - scikit-image>=0.26.0,<0.27
-  - devtools>=0.13.0,<0.14 ; extra == 'dev'
-  - hatch>=1.18.1,<2 ; extra == 'dev'
-  - jsonschema>=4.26.0,<5 ; extra == 'dev'
-  - notebook>=7.6.3,<8 ; extra == 'dev'
-  - pre-commit>=4.7.0,<5 ; extra == 'dev'
-  - pytest>=9.1.1,<10 ; extra == 'dev'
-  - requests>=2.34.2,<3 ; extra == 'dev'
-  - ruff>=0.17.0,<0.18 ; extra == 'dev'
+  - devtools ; extra == 'dev'
+  - hatch ; extra == 'dev'
+  - jsonschema ; extra == 'dev'
+  - notebook ; extra == 'dev'
+  - pre-commit ; extra == 'dev'
+  - pytest ; extra == 'dev'
+  - requests ; extra == 'dev'
+  - ruff ; extra == 'dev'
   requires_python: '>=3.11,<3.15'
 - pypi: https://files.pythonhosted.org/packages/02/08/9c41fb51ab5b43eb21674aff13df270e8ba6c4b29c8624e328dc7a9482af/distlib-0.4.3-py2.py3-none-any.whl
   name: distlib
