@@ -42,7 +42,12 @@ class MosaicLayout:
     tile: TileSize
     pixel_size: PixelSize
     n_tiles: int
-    n_channels: int
+    channel_labels: tuple[str, ...]
+
+    @cached_property
+    def n_channels(self) -> int:
+        """Number of channels of the mosaic"""
+        return len(self.channel_labels)
 
     @cached_property
     def n_cols(self) -> int:
@@ -68,18 +73,18 @@ class MosaicLayout:
         # Tile size is the maximum (y, x) size across all TIFF files
         max_y = 0
         max_x = 0
-        n_channels: set[int] = set()
+        channel_labels: set[tuple[str, ...]] = set()
         pixel_size: set[PixelSize] = set()
         for tif_path in tif_paths:
             with tifffile.TiffFile(tif_path) as tif:
                 page = tif.pages.first
                 max_y = max(max_y, page.imagelength)
                 max_x = max(max_x, page.imagewidth)
-                n_channels.add(len(tif.pages))
+                channel_labels.add(_get_channel_labels(tif=tif))
                 pixel_size.add(_get_pixel_size(tif=tif))
 
         # Check that all images have the same number of channels and pixel size
-        if len(n_channels) != 1:
+        if len(channel_labels) != 1:
             raise ValueError("The provided TIFF images have mismatching channels")
         if len(pixel_size) != 1:
             raise ValueError("The provided TIFF images have mismatching pixel size")
@@ -87,7 +92,7 @@ class MosaicLayout:
         return cls(
             tile=TileSize(y=max_y, x=max_x),
             n_tiles=len(tif_paths),
-            n_channels=n_channels.pop(),
+            channel_labels=channel_labels.pop(),
             pixel_size=pixel_size.pop(),
         )
 
@@ -108,10 +113,10 @@ class MosaicLayout:
 
     def get_roi_slices(
         self, row: int, col: int, img_shape: tuple[int, int]
-    ) -> list[RoiSlice]:
+    ) -> tuple[RoiSlice, ...]:
         """Get ROI Slice for an image of shape img_shape at given row and col indexer"""
         y0, x0 = self._get_tile_origin(row=row, col=col)
-        roi_slices = [
+        roi_slices = (
             RoiSlice(
                 axis_name="x",
                 start=x0 * self.pixel_size.x,
@@ -122,7 +127,7 @@ class MosaicLayout:
                 start=y0 * self.pixel_size.y,
                 length=img_shape[0] * self.pixel_size.y,
             ),
-        ]
+        )
         return roi_slices
 
 
@@ -135,6 +140,19 @@ def _get_pixel_size(tif: tifffile.TiffFile) -> PixelSize:
     # Pixel size in micrometer
     pixel_size = PixelSize(y=1 / y_res, x=1 / x_res)
     return pixel_size
+
+
+def _get_channel_labels(tif: tifffile.TiffFile) -> tuple[str, ...]:
+    """Return the channel labels from the PageName tag of each tif page.
+
+    Pages without a PageName tag fall back to a generic "channel_{i}" label.
+    """
+    labels: list[str] = []
+    for i, page in enumerate(tif.pages):
+        # aspage() narrows TiffPage | TiffFrame to TiffPage, which holds the tags
+        page_name = page.aspage().tags.get("PageName")
+        labels.append(page_name.value if page_name is not None else f"channel_{i}")
+    return tuple(labels)
 
 
 def pad_to_shape(

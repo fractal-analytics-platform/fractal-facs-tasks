@@ -198,11 +198,24 @@
             "type": "string",
             "description": "Path to the folder containing the TIFF files of the S8 FACS to be converted."
           },
+          "zarr_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Zarr Name",
+            "description": "Name of the output OME-Zarr, without the \".ome.zarr\" extension. Used for the plate if `fake_a_plate` is True, otherwise for the image. If None, the name of the TIFF folder is used, with special characters (e.g. whitespace, \"#\", parentheses) replaced by underscores."
+          },
           "fake_a_plate": {
             "default": true,
             "title": "Fake A Plate",
             "type": "boolean",
-            "description": "Whether to create a fake plate structure with a single well \"A1\" containing the mosaic image. This is useful to use some tools that need plates (e.g. Fractal feature explorer). Defaults to True."
+            "description": "Whether to create a fake plate structure with a single well \"A01\" containing the mosaic image. This is useful to use some tools that need plates (e.g. Fractal feature explorer). Defaults to True."
           },
           "add_z_singleton": {
             "default": true,
@@ -227,7 +240,7 @@
             "default": true,
             "title": "Overwrite",
             "type": "boolean",
-            "description": "Whether to overwrite an existing OME-Zarr image. Defaults to True."
+            "description": "Whether to overwrite an existing OME-Zarr image (and fake plate, if `fake_a_plate` is True). Defaults to True."
           }
         },
         "required": [

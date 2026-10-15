@@ -1,16 +1,14 @@
 """Converter for the BD S8 cell sorter imaging data at UZH FCF"""
 
 import logging
-import random
+import re
 from pathlib import Path
 from typing import Optional
 
 import ngio
 import numpy as np
 import tifffile
-import zarr
-from dask.array.core import Array as DaskArray
-from ngio import NgioSupportedStore, Roi
+from ngio import Roi
 from ngio.tables import RoiTable
 from pydantic import validate_call
 from zarr.storage import LocalStore
@@ -18,74 +16,15 @@ from zarr.storage import LocalStore
 from fcf_ome_zarr.converters.mosaic import MosaicLayout, pad_to_shape
 
 
-def sampled_percentiles(
-    ac: DaskArray, low: float = 0.5, high: float = 99.5, n_chunks: int = 200
-) -> np.ndarray:
-    """Estimate percentiles from a sample of random chunks."""
-    # pick random chunks
-    all_chunks = list(np.ndindex(*ac.numblocks))
-    chosen = random.sample(all_chunks, min(len(all_chunks), n_chunks))
-    samples = []
-    for idx in chosen:
-        block = ac.blocks[idx].compute()
-        samples.append(block.ravel())
-    samples = np.concatenate(samples)
-    return np.percentile(samples, [low, high])
+def sanitize_folder_name(folder_name: str) -> str:
+    """Turn a folder name into a name that is safe to use for the OME-Zarr.
 
-
-def reset_omero_channels(store: NgioSupportedStore, level: str = "0") -> None:
-    """Custom OMERO channel metadata reset for S8 converter"""
-    ome_zarr_container = ngio.open_ome_zarr_container(store)
-    img = ome_zarr_container.get_image(path=level)
-    arr_dask = img.get_as_dask()  # (C, Y, X) float32 in your case
-
-    # Compute robust ranges; adjust as you like
-    p_lo, p_hi = 0.05, 99.995
-    starts, ends, mins, maxs = [], [], [], []
-    for c in range(arr_dask.shape[0]):
-        ac = arr_dask[c]
-        lo, hi = sampled_percentiles(ac, p_lo, p_hi)
-        mn, mx = ac.min().compute(), ac.max().compute()
-        starts.append(float(lo))
-        ends.append(float(hi))
-        mins.append(float(mn))
-        maxs.append(float(mx))
-
-    # Optional: supply labels/colors/active; otherwise leave as None
-    labels = ["Lightloss", "SSC", "FSC", "FL1", "FL2", "FL3"]
-    colors = ["FFFFFF", "00FF00", "0000FF", "FF0000", "FF00FF", "00FFFF"]
-    active = [True, True, True, True, False, False]
-
-    # Hard-code lightloss rescaling
-    starts[0] = 0.0
-    ends[0] = 0.2
-
-    # Hard-code all starts to 0
-    for i in range(len(starts)):
-        starts[i] = 0.0
-
-    # Hard-code all max to 1 (to avoid validation errors)
-    for i in range(len(maxs)):
-        maxs[i] = 1.0
-
-    # Write to the Zarr root attrs
-    root = zarr.open_group(store, mode="r+")
-    root.attrs["omero"] = {
-        "channels": [
-            {
-                "label": labels[c],
-                "color": (colors[c] if colors else None),
-                "active": (active[c] if active else None),
-                "window": {
-                    "min": mins[c],
-                    "max": maxs[c],
-                    "start": starts[c],
-                    "end": ends[c] + 0.1,
-                },
-            }
-            for c in range(len(mins))
-        ]
-    }
+    Only letters, digits, underscores and dashes are kept. Every run of other
+    characters is replaced by a single underscore, and underscores at both ends
+    are removed.
+    See https://github.com/fractal-analytics-platform/fractal-tasks-core/issues/843
+    """
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", folder_name).strip("_")
 
 
 @validate_call
@@ -95,12 +34,16 @@ def fcf_s8_converter(
     zarr_dir: str,
     # Input parameters
     tiff_folder_path: str,
+    zarr_name: Optional[str] = None,
     fake_a_plate: bool = True,
     add_z_singleton: bool = True,
     convert_first_x_tiffs: Optional[int] = None,
     overwrite: bool = True,
 ) -> dict | None:
-    """Apply a Gaussian blur to the input image and save the result as a OME-Zarr image.
+    """Convert BD S8 TIFF files into a single mosaic OME-Zarr image.
+
+    Each TIFF is placed in its own tile of the mosaic and recorded as a ROI in
+    the "FOV_ROI_table". Channel labels are read from the TIFF PageName tags.
 
     Args:
         zarr_dir: path of the directory where the new OME-Zarrs will be
@@ -108,8 +51,13 @@ def fcf_s8_converter(
             (standard argument for Fractal tasks, managed by Fractal server).
         tiff_folder_path: Path to the folder containing the TIFF files of the
             S8 FACS to be converted.
+        zarr_name: Name of the output OME-Zarr, without the ".ome.zarr"
+            extension. Used for the plate if `fake_a_plate` is True, otherwise
+            for the image. If None, the name of the TIFF folder is used, with
+            special characters (e.g. whitespace, "#", parentheses) replaced
+            by underscores.
         fake_a_plate: Whether to create a fake plate structure with a single
-            well "A1" containing the mosaic image. This is useful to use some
+            well "A01" containing the mosaic image. This is useful to use some
             tools that need plates (e.g. Fractal feature explorer).
             Defaults to True.
         add_z_singleton: Whether to add a singleton Z dimension to the OME-Zarr.
@@ -119,26 +67,31 @@ def fcf_s8_converter(
         convert_first_x_tiffs: If provided, only the first X TIFF files in the
             folder are converted. This is useful for testing with a smaller
             number of files. If None, all TIFF files in the folder are converted.
-        overwrite (bool): Whether to overwrite an existing OME-Zarr image.
-            Defaults to True.
+        overwrite (bool): Whether to overwrite an existing OME-Zarr image (and
+            fake plate, if `fake_a_plate` is True). Defaults to True.
     """
     logging.info(f"Processing {tiff_folder_path=}")
     tiff_folder = Path(tiff_folder_path)
 
-    plate_url = "plate.ome.zarr"
-    # Probably update name not to be hardcoded?
-    image_name = "s8_cells_mosaic.ome.zarr"
+    if zarr_name is None:
+        zarr_name = sanitize_folder_name(tiff_folder.name)
+    # Either the fake plate or the image, depending on fake_a_plate
+    mosaic_url = f"{zarr_name}.ome.zarr"
+    # Image list attributes, only set for the fake plate
+    attributes: dict[str, str] = {}
     if fake_a_plate:
-        zarr_url = Path(f"{zarr_dir}/{plate_url}/{image_name}")
-
         plate = ngio.create_empty_plate(
-            f"{zarr_dir}/{plate_url}", name=plate_url, overwrite=True
+            f"{zarr_dir}/{mosaic_url}",
+            name=zarr_name,
+            ngff_version="0.5",
+            overwrite=overwrite,
         )
-        well = plate.add_well(row="A", column=1)
-        well.add_image(image_name)
+        image_path = plate.add_image(row="A", column=1, image_path="0")
+        zarr_url = Path(f"{zarr_dir}/{mosaic_url}/{image_path}")
+        attributes = {"plate": mosaic_url, "well": "".join(image_path.split("/")[:2])}
 
     else:
-        zarr_url = Path(f"{zarr_dir}/{image_name}")
+        zarr_url = Path(f"{zarr_dir}/{mosaic_url}")
 
     # Convert the TIFFs to a mosaic OME-Zarr
     # Calcualte the mosaic layout parameters and extract image metadata
@@ -165,6 +118,7 @@ def fcf_s8_converter(
         else (layout.n_channels, *layout.size),
         axes_names=["c", "z", "y", "x"] if add_z_singleton else ["c", "y", "x"],
         pixelsize=layout.pixel_size,
+        channels_meta=list(layout.channel_labels),
         dtype="float32",
         chunks=(layout.n_channels, 1, 512, 512)
         if add_z_singleton
@@ -214,20 +168,12 @@ def fcf_s8_converter(
     )
 
     ngio_image.consolidate(mode="auto")
-    reset_omero_channels(store, level="3")
+    # Set contrast limits for viewers
+    ome_zarr_container.set_channel_windows_with_percentiles(percentiles=(0.05, 99.995))
 
-    if fake_a_plate:
-        image_list_update_dict = {
-            "image_list_updates": [
-                {
-                    "zarr_url": str(zarr_url),
-                    "attributes": {"plate": "plate.ome.zarr", "well": "A1"},
-                }
-            ]
-        }
-    else:
-        image_list_update_dict = {"image_list_updates": [{"zarr_url": str(zarr_url)}]}
-    return image_list_update_dict
+    return {
+        "image_list_updates": [{"zarr_url": str(zarr_url), "attributes": attributes}]
+    }
 
 
 if __name__ == "__main__":

@@ -16,6 +16,19 @@ def example_data_dir() -> Path:
 
 
 @pytest.fixture
+def example_channel_labels() -> tuple[str, ...]:
+    """Channel labels stored in the PageName tags of the S8 example TIFFs."""
+    return (
+        "LightLoss (Imaging)",
+        "FSC",
+        "SSC (Imaging)",
+        "Imaging_BP/534/46/LP/505",
+        "Imaging_BP/598/60/LP/570",
+        "Imaging_BP/788/225/LP/675",
+    )
+
+
+@pytest.fixture
 def mixed_tiff_dir(tmp_path: Path) -> Path:
     """Copy of the example data plus a single-page TIFF without metadata."""
     mixed_dir = tmp_path / "mixed_tiffs"
