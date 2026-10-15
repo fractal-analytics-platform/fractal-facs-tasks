@@ -19,10 +19,12 @@ from fcf_ome_zarr.converters.mosaic import MosaicLayout, pad_to_shape
 def sanitize_folder_name(folder_name: str) -> str:
     """Turn a folder name into a name that is safe to use for the OME-Zarr.
 
-    Whitespace is stripped from both ends and inner runs of whitespace are
-    replaced by a single underscore.
+    Only letters, digits, underscores and dashes are kept. Every run of other
+    characters is replaced by a single underscore, and underscores at both ends
+    are removed.
+    See https://github.com/fractal-analytics-platform/fractal-tasks-core/issues/843
     """
-    return re.sub(r"\s+", "_", folder_name.strip())
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", folder_name).strip("_")
 
 
 @validate_call
@@ -52,7 +54,8 @@ def fcf_s8_converter(
         mosaic_name: Name of the output OME-Zarr, without the ".ome.zarr"
             extension. Used for the plate if `fake_a_plate` is True, otherwise
             for the image. If None, the name of the TIFF folder is used, with
-            whitespace replaced by underscores.
+            special characters (e.g. whitespace, "#", parentheses) replaced
+            by underscores.
         fake_a_plate: Whether to create a fake plate structure with a single
             well "A01" containing the mosaic image. This is useful to use some
             tools that need plates (e.g. Fractal feature explorer).

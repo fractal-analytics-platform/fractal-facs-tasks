@@ -165,10 +165,22 @@ def test_converter_with_single_channel_tiffs(
 @pytest.mark.parametrize(
     "folder_name, expected",
     [
+        # Unchanged: letters, digits, underscores and dashes
         ("example_data", "example_data"),
+        ("my-mosaic_v2", "my-mosaic_v2"),
+        # Whitespace
         ("Demo recording", "Demo_recording"),
         ("Demo  recording\t2", "Demo_recording_2"),
         (" Demo recording ", "Demo_recording"),
+        # Hash
+        ("Plate#1", "Plate_1"),
+        ("#Plate 1", "Plate_1"),
+        # Parentheses
+        ("Plate(1)", "Plate_1"),
+        ("Plate (copy)", "Plate_copy"),
+        # Mixed special characters
+        ("Plate #1 (2024-05-01)", "Plate_1_2024-05-01"),
+        ("S8.run", "S8_run"),
     ],
 )
 def test_sanitize_folder_name(folder_name: str, expected: str):
