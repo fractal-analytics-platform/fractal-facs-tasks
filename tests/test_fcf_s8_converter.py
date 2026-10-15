@@ -98,13 +98,13 @@ def test_converter_writes_image_inside_fake_plate(
     assert image.shape == (6, 1, 146, 208)
 
 
-@pytest.mark.parametrize("mosaic_name", [None, "my_mosaic"])
-def test_mosaic_name_sets_image_name(
-    tmp_path: Path, example_data_dir: Path, mosaic_name: str | None
+@pytest.mark.parametrize("zarr_name", [None, "my_mosaic"])
+def test_zarr_name_sets_output_name(
+    tmp_path: Path, example_data_dir: Path, zarr_name: str | None
 ):
-    zarr_url = run_converter(tmp_path, example_data_dir, mosaic_name=mosaic_name)
+    zarr_url = run_converter(tmp_path, example_data_dir, zarr_name=zarr_name)
 
-    expected_name = mosaic_name or example_data_dir.name
+    expected_name = zarr_name or example_data_dir.name
     assert zarr_url == tmp_path / f"{expected_name}.ome.zarr"
 
 
@@ -187,7 +187,7 @@ def test_sanitize_folder_name(folder_name: str, expected: str):
     assert sanitize_folder_name(folder_name) == expected
 
 
-def test_mosaic_name_from_folder_with_spaces(tmp_path: Path, example_data_dir: Path):
+def test_zarr_name_from_folder_with_spaces(tmp_path: Path, example_data_dir: Path):
     tiff_dir = tmp_path / "Demo recording"
     shutil.copytree(example_data_dir, tiff_dir)
 

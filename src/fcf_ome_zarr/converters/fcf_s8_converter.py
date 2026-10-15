@@ -34,7 +34,7 @@ def fcf_s8_converter(
     zarr_dir: str,
     # Input parameters
     tiff_folder_path: str,
-    mosaic_name: Optional[str] = None,
+    zarr_name: Optional[str] = None,
     fake_a_plate: bool = True,
     add_z_singleton: bool = True,
     convert_first_x_tiffs: Optional[int] = None,
@@ -51,7 +51,7 @@ def fcf_s8_converter(
             (standard argument for Fractal tasks, managed by Fractal server).
         tiff_folder_path: Path to the folder containing the TIFF files of the
             S8 FACS to be converted.
-        mosaic_name: Name of the output OME-Zarr, without the ".ome.zarr"
+        zarr_name: Name of the output OME-Zarr, without the ".ome.zarr"
             extension. Used for the plate if `fake_a_plate` is True, otherwise
             for the image. If None, the name of the TIFF folder is used, with
             special characters (e.g. whitespace, "#", parentheses) replaced
@@ -73,16 +73,16 @@ def fcf_s8_converter(
     logging.info(f"Processing {tiff_folder_path=}")
     tiff_folder = Path(tiff_folder_path)
 
-    if mosaic_name is None:
-        mosaic_name = sanitize_folder_name(tiff_folder.name)
+    if zarr_name is None:
+        zarr_name = sanitize_folder_name(tiff_folder.name)
     # Either the fake plate or the image, depending on fake_a_plate
-    mosaic_url = f"{mosaic_name}.ome.zarr"
+    mosaic_url = f"{zarr_name}.ome.zarr"
     # Image list attributes, only set for the fake plate
     attributes: dict[str, str] = {}
     if fake_a_plate:
         plate = ngio.create_empty_plate(
             f"{zarr_dir}/{mosaic_url}",
-            name=mosaic_name,
+            name=zarr_name,
             ngff_version="0.5",
             overwrite=overwrite,
         )
