@@ -44,8 +44,8 @@ def test_converter_writes_mosaic_image(
         assert image.axes == ("c", "y", "x")
         assert image.shape == (6, 146, 208)
     assert image.dtype == "float32"
-    assert image.pixel_size.y == pytest.approx(113.636, abs=1e-3)
-    assert image.pixel_size.x == pytest.approx(136.364, abs=1e-3)
+    assert image.pixel_size.y == pytest.approx(60 / 104 / 1.2)
+    assert image.pixel_size.x == pytest.approx(60 / 104)
 
 
 @pytest.mark.parametrize("add_z_singleton", [True, False])

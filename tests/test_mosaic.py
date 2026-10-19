@@ -86,7 +86,8 @@ def test_from_paths_reads_tile_size_and_metadata(
     assert layout.n_tiles == 4
     assert layout.n_channels == 6
     assert layout.channel_labels == example_channel_labels
-    assert layout.pixel_size == pytest.approx((113.636, 136.364), abs=1e-3)
+    # 60 µm / 104 px in x, y/x anisotropy of 1.2 from the resolution tags
+    assert layout.pixel_size == pytest.approx((60 / 104 / 1.2, 60 / 104))
 
 
 def test_from_paths_without_files_raises():
