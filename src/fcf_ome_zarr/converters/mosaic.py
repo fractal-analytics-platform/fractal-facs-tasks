@@ -12,6 +12,8 @@ import tifffile
 from ngio import RoiSlice
 from numpy.typing import DTypeLike
 
+from fcf_ome_zarr.utils import sanitize_string
+
 
 # Might shadow PixelSize from ngio if not careful, keep for now
 class PixelSize(NamedTuple):
@@ -143,15 +145,26 @@ def _get_pixel_size(tif: tifffile.TiffFile) -> PixelSize:
 
 
 def _get_channel_labels(tif: tifffile.TiffFile) -> tuple[str, ...]:
-    """Return the channel labels from the PageName tag of each tif page.
+    """Return the sanitized channel labels from the PageName tag of each tif page.
 
-    Pages without a PageName tag fall back to a generic "channel_{i}" label.
+    Labels are sanitized with `sanitize_string`. Pages without a PageName tag,
+    or whose label is empty after sanitizing, fall back to "channel_{i}".
+    Raises a ValueError if two labels are identical after sanitizing.
     """
     labels: list[str] = []
+    raw_labels: dict[str, str] = {}
     for i, page in enumerate(tif.pages):
         # aspage() narrows TiffPage | TiffFrame to TiffPage, which holds the tags
         page_name = page.aspage().tags.get("PageName")
-        labels.append(page_name.value if page_name is not None else f"channel_{i}")
+        raw_label = str(page_name.value) if page_name is not None else ""
+        label = sanitize_string(raw_label) or f"channel_{i}"
+        if label in raw_labels:
+            raise ValueError(
+                f"Channel labels {raw_labels[label]!r} and {raw_label!r} in "
+                f"{tif.filename} are both sanitized to {label!r}."
+            )
+        raw_labels[label] = raw_label
+        labels.append(label)
     return tuple(labels)
 
 

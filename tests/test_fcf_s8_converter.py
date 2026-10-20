@@ -7,10 +7,7 @@ import pytest
 import tifffile
 from ngio import open_ome_zarr_container, open_ome_zarr_plate
 
-from fcf_ome_zarr.converters.fcf_s8_converter import (
-    fcf_s8_converter,
-    sanitize_folder_name,
-)
+from fcf_ome_zarr.converters.fcf_s8_converter import fcf_s8_converter
 
 
 def run_converter(tmp_path: Path, tiff_dir: Path, **kwargs) -> Path:
@@ -160,31 +157,6 @@ def test_converter_with_single_channel_tiffs(
 
     # 2 tiles of (20, 30) pixels in a 1 x 2 grid
     assert image.shape == (1, 1, 20, 60)
-
-
-@pytest.mark.parametrize(
-    "folder_name, expected",
-    [
-        # Unchanged: letters, digits, underscores and dashes
-        ("example_data", "example_data"),
-        ("my-mosaic_v2", "my-mosaic_v2"),
-        # Whitespace
-        ("Demo recording", "Demo_recording"),
-        ("Demo  recording\t2", "Demo_recording_2"),
-        (" Demo recording ", "Demo_recording"),
-        # Hash
-        ("Plate#1", "Plate_1"),
-        ("#Plate 1", "Plate_1"),
-        # Parentheses
-        ("Plate(1)", "Plate_1"),
-        ("Plate (copy)", "Plate_copy"),
-        # Mixed special characters
-        ("Plate #1 (2024-05-01)", "Plate_1_2024-05-01"),
-        ("S8.run", "S8_run"),
-    ],
-)
-def test_sanitize_folder_name(folder_name: str, expected: str):
-    assert sanitize_folder_name(folder_name) == expected
 
 
 def test_zarr_name_from_folder_with_spaces(tmp_path: Path, example_data_dir: Path):
