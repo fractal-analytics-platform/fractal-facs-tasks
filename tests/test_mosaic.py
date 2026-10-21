@@ -129,6 +129,38 @@ def test_from_paths_without_page_names_uses_default_labels(
     assert layout.channel_labels == ("channel_0", "channel_1", "channel_2")
 
 
+def test_from_paths_sanitizes_page_names(make_tiff: Callable[..., Path]):
+    tif_paths = [
+        make_tiff(
+            "a.tif",
+            shape=(3, 20, 30),
+            page_names=["SSC (Imaging)", "Imaging_BP/534/46/LP/505", "###"],
+        )
+    ]
+    layout = MosaicLayout.from_paths(tif_paths)
+
+    # Labels empty after sanitizing fall back to the default label
+    assert layout.channel_labels == (
+        "SSC_Imaging",
+        "Imaging_BP_534_46_LP_505",
+        "channel_2",
+    )
+
+
+def test_from_paths_with_colliding_page_names_raises(
+    make_tiff: Callable[..., Path],
+):
+    tif_paths = [
+        make_tiff(
+            "a.tif",
+            shape=(2, 20, 30),
+            page_names=["SSC (Imaging)", "SSC_Imaging"],
+        )
+    ]
+    with pytest.raises(ValueError, match="both sanitized to 'SSC_Imaging'"):
+        MosaicLayout.from_paths(tif_paths)
+
+
 def test_pad_to_shape_keeps_image_in_top_left_corner():
     img = np.ones((2, 3, 4), dtype=np.float32)
     padded = pad_to_shape(img, target_shape=(5, 6))

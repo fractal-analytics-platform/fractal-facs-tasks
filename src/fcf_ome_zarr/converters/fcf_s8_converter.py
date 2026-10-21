@@ -1,7 +1,6 @@
 """Converter for the BD S8 cell sorter imaging data at UZH FCF"""
 
 import logging
-import re
 from pathlib import Path
 from typing import Optional
 
@@ -14,17 +13,7 @@ from pydantic import validate_call
 from zarr.storage import LocalStore
 
 from fcf_ome_zarr.converters.mosaic import MosaicLayout, pad_to_shape
-
-
-def sanitize_folder_name(folder_name: str) -> str:
-    """Turn a folder name into a name that is safe to use for the OME-Zarr.
-
-    Only letters, digits, underscores and dashes are kept. Every run of other
-    characters is replaced by a single underscore, and underscores at both ends
-    are removed.
-    See https://github.com/fractal-analytics-platform/fractal-tasks-core/issues/843
-    """
-    return re.sub(r"[^A-Za-z0-9_-]+", "_", folder_name).strip("_")
+from fcf_ome_zarr.utils import sanitize_string
 
 
 @validate_call
@@ -43,7 +32,9 @@ def fcf_s8_converter(
     """Convert BD S8 TIFF files into a single mosaic OME-Zarr image.
 
     Each TIFF is placed in its own tile of the mosaic and recorded as a ROI in
-    the "FOV_ROI_table". Channel labels are read from the TIFF PageName tags.
+    the "FOV_ROI_table". Channel labels are read from the TIFF PageName tags,
+    with special characters (e.g. whitespace, "/", parentheses) replaced by
+    underscores.
 
     Args:
         zarr_dir: path of the directory where the new OME-Zarrs will be
@@ -74,7 +65,7 @@ def fcf_s8_converter(
     tiff_folder = Path(tiff_folder_path)
 
     if zarr_name is None:
-        zarr_name = sanitize_folder_name(tiff_folder.name)
+        zarr_name = sanitize_string(tiff_folder.name)
     # Either the fake plate or the image, depending on fake_a_plate
     mosaic_url = f"{zarr_name}.ome.zarr"
     # Image list attributes, only set for the fake plate
