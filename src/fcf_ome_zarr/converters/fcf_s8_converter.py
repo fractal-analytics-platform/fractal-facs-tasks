@@ -86,10 +86,12 @@ def fcf_s8_converter(
 
     # Convert the TIFFs to a mosaic OME-Zarr
     # Calcualte the mosaic layout parameters and extract image metadata
+    # TIFF images are in subdirs containing up to 10000 images each, but
+    # their ID is unique across the whole folder.
     if convert_first_x_tiffs is not None:
-        tif_paths = sorted(tiff_folder.glob("*.tif*"))[:convert_first_x_tiffs]
+        tif_paths = sorted(tiff_folder.rglob("*.tif*"))[:convert_first_x_tiffs]
     else:
-        tif_paths = sorted(tiff_folder.glob("*.tif*"))
+        tif_paths = sorted(tiff_folder.rglob("*.tif*"))
 
     layout = MosaicLayout.from_paths(tif_paths)
 
