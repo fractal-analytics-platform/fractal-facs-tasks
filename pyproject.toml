@@ -48,6 +48,7 @@ dependencies = [
     "ngio>=1.1.1,<2",
     "scikit-image>=0.26.0,<0.27",
     "fractal-task-tools>=0.5.1,<0.6",
+    "flowkit>=1.3.2,<2",
 ]
 
 # Optional dependencies (e.g. for `pip install -e ".[dev]"`, see
