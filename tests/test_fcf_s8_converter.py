@@ -56,7 +56,7 @@ def test_fov_rois_match_source_tiffs(
     image = ome_zarr.get_image()
     rois = ome_zarr.get_roi_table("FOV_ROI_table").rois()
 
-    tif_paths = sorted(example_data_dir.glob("*.tif*"))
+    tif_paths = sorted(example_data_dir.rglob("*.tif*"))
     assert [roi.name for roi in rois] == [str(i) for i in range(len(tif_paths))]
 
     n_nonzero = 0

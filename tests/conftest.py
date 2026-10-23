@@ -6,12 +6,12 @@ import numpy as np
 import pytest
 import tifffile
 
-EXAMPLE_DATA_DIR = Path(__file__).parent / "example_data"
+EXAMPLE_DATA_DIR = Path(__file__).parent / "example_data" / "Demo_data_S8"
 
 
 @pytest.fixture
 def example_data_dir() -> Path:
-    """Folder with the S8 example TIFFs."""
+    """S8 example recording, with TIFFs in subfolders as written by the instrument."""
     return EXAMPLE_DATA_DIR
 
 

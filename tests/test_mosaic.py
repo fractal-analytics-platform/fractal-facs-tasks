@@ -77,7 +77,7 @@ def test_tile_slices_stay_in_bounds_without_overlap(add_z_singleton: bool):
 def test_from_paths_reads_tile_size_and_metadata(
     example_data_dir: Path, example_channel_labels: tuple[str, ...]
 ):
-    tif_paths = sorted(example_data_dir.glob("*.tif*"))
+    tif_paths = sorted(example_data_dir.rglob("*.tif*"))
     layout = MosaicLayout.from_paths(tif_paths)
 
     # NOTE: this is hardcoding params from the example data.
@@ -96,13 +96,13 @@ def test_from_paths_without_files_raises():
 
 
 def test_from_paths_with_mixed_folder_raises(mixed_tiff_dir: Path):
-    tif_paths = sorted(mixed_tiff_dir.glob("*.tif*"))
+    tif_paths = sorted(mixed_tiff_dir.rglob("*.tif*"))
     with pytest.raises(ValueError, match="mismatching channels"):
         MosaicLayout.from_paths(tif_paths)
 
 
 def test_from_paths_uses_only_given_files(example_data_dir: Path):
-    tif_paths = sorted(example_data_dir.glob("*.tif*"))
+    tif_paths = sorted(example_data_dir.rglob("*.tif*"))
     layout = MosaicLayout.from_paths(tif_paths[:1])
 
     assert layout.n_tiles == 1
