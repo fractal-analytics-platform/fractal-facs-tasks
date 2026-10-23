@@ -1,121 +1,113 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
-from ngio import ChannelSelectionModel, create_synthetic_ome_zarr
+from ngio import open_ome_zarr_container
+from skimage.draw import disk
 
+from fcf_ome_zarr.converters.fcf_s8_converter import fcf_s8_converter
 from fcf_ome_zarr.threshold_segmentation_task import (
+    DEFAULT_CHANNEL,
+    FOV_ROI_TABLE,
+    segment_cell,
     threshold_segmentation_task,
 )
-from fcf_ome_zarr.utils import (
-    IteratorConfiguration,
-    MaskingConfiguration,
-)
+
+LABEL_NAME = "LightLoss_Imaging_thresholded"
+
+# Synthetic FOVs mimic the LightLoss channel of the example data:
+# float32, bright background around 0.15, cells darker
+FOV_SHAPE = (73, 104)
+BACKGROUND = 0.15
+CELL = 0.1
+
+
+@pytest.fixture(params=[False, True], ids=["yx", "z_singleton"])
+def zarr_url(request: pytest.FixtureRequest, tmp_path: Path, example_data_dir: Path):
+    """OME-Zarr produced by the S8 converter from the example data."""
+    result = fcf_s8_converter(
+        tiff_folder_path=str(example_data_dir),
+        zarr_dir=str(tmp_path),
+        fake_a_plate=False,
+        add_z_singleton=request.param,
+    )
+    assert result is not None
+    return result["image_list_updates"][0]["zarr_url"]
 
 
 @pytest.mark.parametrize(
-    "shape, axes",
-    [
-        ((64, 64), "yx"),
-        ((1, 64, 64), "cyx"),
-        ((3, 64, 64), "cyx"),
-        ((4, 64, 64), "tyx"),
-        ((1, 64, 64), "zyx"),
-        ((1, 1, 64, 64), "czyx"),
-        ((1, 10, 64, 64), "czyx"),
-        ((1, 1, 64, 64), "tzyx"),
-        ((1, 3, 64, 64), "tcyx"),
-        ((1, 1, 10, 64, 64), "tczyx"),
-    ],
+    "params", [{}, {"sigma": (2.0, 1.5), "max_size": 32}], ids=["default", "custom"]
 )
-def test_threshold_segmentation_task(tmp_path: Path, shape: tuple[int, ...], axes: str):
-    """Base test for the threshold segmentation task."""
-    test_data_path = tmp_path / "data.zarr"
+def test_roundtrip_per_fov(zarr_url: str, params: dict):
+    """The label written for each FOV is segment_cell on that FOV, up to an offset."""
+    threshold_segmentation_task(zarr_url=zarr_url, **params)
 
-    if "c" in axes:
-        num_channels = shape[axes.index("c")]
-    else:
-        num_channels = 1
-    channel_labels = [f"DAPI_{i}" for i in range(num_channels)]
+    ome_zarr = open_ome_zarr_container(zarr_url)
+    image = ome_zarr.get_image()
+    label = ome_zarr.get_label(LABEL_NAME)
 
-    ome_zarr = create_synthetic_ome_zarr(
-        store=test_data_path,
-        shape=shape,
-        channels_meta=channel_labels,
-        overwrite=False,
-        axes_names=axes,
-    )
-    channel = ChannelSelectionModel(identifier="DAPI_0", mode="label")
-    threshold_segmentation_task(
-        zarr_url=str(test_data_path), threshold=18252, channel=channel, overwrite=False
-    )
+    seen: set[int] = set()
+    for roi in ome_zarr.get_roi_table(FOV_ROI_TABLE).rois():
+        fov = image.get_roi_as_numpy(
+            roi, channel_selection=DEFAULT_CHANNEL, axes_order="yx"
+        )
+        expected = segment_cell(fov, **params)
+        written = label.get_roi_as_numpy(roi, axes_order="yx")
 
-    # Check that the label image was created
-    assert "DAPI_0_thresholded" in ome_zarr.list_labels()
+        assert expected.max() > 0, f"No cell found in FOV {roi.name}"
+        # Same background, and each object shifted by one constant offset
+        np.testing.assert_array_equal(written == 0, expected == 0)
+        offsets = np.unique(written[expected > 0] - expected[expected > 0])
+        assert offsets.size == 1
 
-    label = ome_zarr.get_label("DAPI_0_thresholded")
-    label_data = label.get_as_numpy()
-    # Check that the label image is not empty
-    assert label_data.max() > 0
-    # DISCLAIMER: This is only a very basic test.
-    # More comprehensive tests should be implemented based on the expected
-    # results not only the presence of a label image.
+        # Label ids are not shared between FOVs
+        fov_labels = set(np.unique(written).tolist()) - {0}
+        assert not fov_labels & seen
+        seen |= fov_labels
 
 
-@pytest.mark.parametrize(
-    "shape, axes",
-    [
-        ((64, 64), "yx"),
-        ((1, 64, 64), "cyx"),
-        ((3, 64, 64), "cyx"),
-        ((4, 64, 64), "tyx"),
-        ((1, 64, 64), "zyx"),
-        ((1, 1, 64, 64), "czyx"),
-        ((1, 10, 64, 64), "czyx"),
-        ((1, 1, 64, 64), "tzyx"),
-        ((1, 3, 64, 64), "tcyx"),
-        ((1, 1, 10, 64, 64), "tczyx"),
-    ],
-)
-def test_threshold_segmentation_task_masked(
-    tmp_path: Path, shape: tuple[int, ...], axes: str
-):
-    """Test the threshold segmentation task with a masking configuration."""
-    test_data_path = tmp_path / "data.zarr"
+def _fov() -> np.ndarray:
+    """Noisy background with no cell."""
+    rng = np.random.default_rng(0)
+    return (BACKGROUND + rng.normal(0, 0.002, FOV_SHAPE)).astype(np.float32)
 
-    if "c" in axes:
-        num_channels = shape[axes.index("c")]
-    else:
-        num_channels = 1
-    channel_labels = [f"DAPI_{i}" for i in range(num_channels)]
 
-    ome_zarr = create_synthetic_ome_zarr(
-        store=test_data_path,
-        shape=shape,
-        channels_meta=channel_labels,
-        overwrite=False,
-        axes_names=axes,
-    )
-    channel = ChannelSelectionModel(identifier="DAPI_0", mode="label")
+def _disk_mask(center: tuple[int, int], radius: float) -> np.ndarray:
+    mask = np.zeros(FOV_SHAPE, dtype=bool)
+    mask[disk(center, radius, shape=FOV_SHAPE)] = True
+    return mask
 
-    iter_config = IteratorConfiguration(
-        masking=MaskingConfiguration(mode="Label Name", identifier="nuclei_mask"),
-        roi_table=None,
-    )
-    threshold_segmentation_task(
-        zarr_url=str(test_data_path),
-        threshold=18252,
-        channel=channel,
-        overwrite=False,
-        iterator_configuration=iter_config,
-    )
 
-    # Check that the label image was created
-    assert "DAPI_0_thresholded" in ome_zarr.list_labels()
+def test_segment_cell_single_dark_cell():
+    img = _fov()
+    img[_disk_mask((36, 52), 12)] = CELL
 
-    label = ome_zarr.get_label("DAPI_0_thresholded")
-    label_data = label.get_as_numpy()
-    # Check that the label image is not empty
-    assert label_data.max() > 0
-    # DISCLAIMER: This is only a very basic test.
-    # More comprehensive tests should be implemented based on the expected
-    # results not only the presence of a label image.
+    label_img = segment_cell(img)
+
+    assert label_img.shape == FOV_SHAPE
+    assert set(np.unique(label_img).tolist()) == {0, 1}
+    # The object covers the cell and doesn't spread far beyond it
+    assert label_img[_disk_mask((36, 52), 10)].all()
+    assert not label_img[~_disk_mask((36, 52), 16)].any()
+
+
+def test_segment_cell_keeps_separate_objects():
+    img = _fov()
+    img[_disk_mask((36, 25), 10)] = CELL
+    img[_disk_mask((36, 80), 10)] = CELL
+
+    label_img = segment_cell(img)
+
+    assert set(np.unique(label_img).tolist()) == {0, 1, 2}
+    assert label_img[36, 25] != label_img[36, 80]
+
+
+def test_segment_cell_fills_holes():
+    img = _fov()
+    img[_disk_mask((36, 52), 12)] = CELL
+    img[_disk_mask((36, 52), 5)] = BACKGROUND
+
+    label_img = segment_cell(img)
+
+    assert set(np.unique(label_img).tolist()) == {0, 1}
+    assert label_img[_disk_mask((36, 52), 5)].all()

@@ -8,7 +8,7 @@
         "Instance Segmentation",
         "Classical segmentation"
       ],
-      "docs_info": "### Purpose\n- Segment an image using a thresholding method & size filtering.\n\n### Outputs\n- A label image\n",
+      "docs_info": "### Purpose\n- Segment cells darker than the background using Gaussian smoothing, automatic (Yen) thresholding, hole filling & size filtering.\n\n### Outputs\n- A label image\n",
       "type": "parallel",
       "executable_parallel": "threshold_segmentation_task.py",
       "meta_parallel": {
@@ -42,69 +42,6 @@
             ],
             "title": "ChannelSelectionModel",
             "type": "object"
-          },
-          "IteratorConfiguration": {
-            "description": "Advanced Masking configuration.",
-            "properties": {
-              "masking": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/MaskingConfiguration"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "If configured, the segmentation will be only saved within the mask region.\nwill be applied based on the provided masking configuration.",
-                "title": "Masking Iterator Configuration"
-              },
-              "roi_table": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Name of a ROI table. If provided, the segmentation will be performed for each ROI\nin the specified ROI table.",
-                "title": "Iterate Over ROIs"
-              }
-            },
-            "title": "IteratorConfiguration",
-            "type": "object"
-          },
-          "MaskingConfiguration": {
-            "description": "Masking configuration.",
-            "properties": {
-              "mode": {
-                "default": "Table Name",
-                "description": "Mode of masking to be applied. If \"Table Name\", the identifier refers to a\nmasking table name.\nIf \"Table Name\", the identifier refers to a masking table name.\nIf \"Label Name\", the identifier refers to a label image name.",
-                "enum": [
-                  "Table Name",
-                  "Label Name"
-                ],
-                "title": "Mode",
-                "type": "string"
-              },
-              "identifier": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Name of the masking table or label image depending on the mode.",
-                "title": "Identifier"
-              }
-            },
-            "title": "MaskingConfiguration",
-            "type": "object"
           }
         },
         "additionalProperties": false,
@@ -116,8 +53,12 @@
           },
           "channel": {
             "$ref": "#/$defs/ChannelSelectionModel",
+            "default": {
+              "mode": "label",
+              "identifier": "LightLoss_Imaging"
+            },
             "title": "Channel",
-            "description": "Select the input channel to be used for segmentation."
+            "description": "Select the input channel to be used for segmentation. Defaults to the \"LightLoss_Imaging\" channel."
           },
           "label_name": {
             "anyOf": [
@@ -132,29 +73,30 @@
             "title": "Label Name",
             "description": "Name of the resulting label image. If not provided, it will be set to \"<channel_identifier>_thresholded\"."
           },
-          "threshold": {
-            "title": "Threshold",
-            "type": "integer",
-            "description": "Threshold value to be applied."
-          },
-          "min_size": {
-            "default": 50,
-            "title": "Min Size",
-            "type": "integer",
-            "description": "Minimum size of objects. Smaller objects are filtered out."
-          },
-          "iterator_configuration": {
-            "anyOf": [
+          "sigma": {
+            "default": [
+              1.5,
+              1.0
+            ],
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
               {
-                "$ref": "#/$defs/IteratorConfiguration"
+                "type": "number"
               },
               {
-                "type": "null"
+                "type": "number"
               }
             ],
-            "default": null,
-            "title": "Iterator Configuration",
-            "description": "Advanced configuration to control masked and ROI-based iteration."
+            "title": "Sigma",
+            "type": "array",
+            "description": "Standard deviation of the Gaussian smoothing along (y, x)."
+          },
+          "max_size": {
+            "default": 64,
+            "title": "Max Size",
+            "type": "integer",
+            "description": "Objects with this many pixels or fewer are removed."
           },
           "overwrite": {
             "default": true,
@@ -164,9 +106,7 @@
           }
         },
         "required": [
-          "zarr_url",
-          "channel",
-          "threshold"
+          "zarr_url"
         ],
         "type": "object",
         "title": "ThresholdSegmentationTask"
@@ -218,10 +158,10 @@
             "description": "Whether to create a fake plate structure with a single well \"A01\" containing the mosaic image. This is useful to use some tools that need plates (e.g. Fractal feature explorer). Defaults to True."
           },
           "add_z_singleton": {
-            "default": true,
+            "default": false,
             "title": "Add Z Singleton",
             "type": "boolean",
-            "description": "Whether to add a singleton Z dimension to the OME-Zarr. This is useful to use some of the tools (like the Fractal feature explorer) that require Z singleton dimensions. Defaults to True."
+            "description": "Whether to add a singleton Z dimension to the OME-Zarr. This is useful to use some of the tools (like the Fractal feature explorer) that require Z singleton dimensions. Defaults to False."
           },
           "convert_first_x_tiffs": {
             "anyOf": [
