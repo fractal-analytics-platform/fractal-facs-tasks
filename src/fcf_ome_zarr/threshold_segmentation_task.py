@@ -1,6 +1,7 @@
-"""This is the Python module for my_task."""
+"""Threshold segmentation of cells in the light-loss channel of BD S8 FOVs."""
 
 import logging
+from typing import Any
 
 import numpy as np
 import scipy.ndimage as ndi
@@ -21,7 +22,7 @@ DEFAULT_CHANNEL = ChannelSelectionModel(identifier="LightLoss_Imaging", mode="la
 
 
 def segment_cell(
-    int_img: np.ndarray,
+    input_img: NDArray[Any],
     sigma: tuple[float, float] = (1.5, 1.0),
     max_size: int = 64,
 ) -> NDArray[np.uint32]:
@@ -32,15 +33,16 @@ def segment_cell(
     the remaining objects labeled.
 
     Args:
-        int_img (np.ndarray): 2D (y, x) input image.
+        input_img (NDArray[Any]): 2D (y, x) input image.
         sigma (tuple[float, float]): Standard deviation of the Gaussian smoothing
             along (y, x).
         max_size (int): Objects with this many pixels or fewer are removed.
 
     Returns:
-        label_img (np.ndarray): Labeled image with the same shape as the input.
+        label_img (NDArray[np.uint32]): Labeled image with the same shape as the
+            input.
     """
-    image = rescale_intensity(int_img)
+    image = rescale_intensity(input_img)
     image_smooth = ndi.gaussian_filter(image, sigma=sigma)
 
     th = threshold_yen(image_smooth)
@@ -93,14 +95,14 @@ def threshold_segmentation_task(
 
     if label_name is None:
         label_name = f"{channel.identifier}_thresholded"
-    label = ome_zarr.derive_label(name=label_name, overwrite=overwrite)
-    logger.info(f"Output label image: {label=}")
+    label_ngio = ome_zarr.derive_label(name=label_name, overwrite=overwrite)
+    logger.info(f"Output label image: {label_ngio=}")
 
-    image = ome_zarr.get_image()
-    logger.info(f"{image=}")
+    image_ngio = ome_zarr.get_image()
+    logger.info(f"{image_ngio=}")
     iterator = SegmentationIterator(
-        input_image=image,
-        output_label=label,
+        input_image=image_ngio,
+        output_label=label_ngio,
         channel_selection=channel,
         axes_order="yx",
         consolidation_mode="auto",
@@ -116,15 +118,14 @@ def threshold_segmentation_task(
     logger.info(f"Iterator updated with ROI table: {iterator=}")
 
     # Keep track of the maximum label to ensure unique across iterations
-    max_label = 0
-    #
+    max_label: int = 0
+
     # Core processing loop
-    #
     logger.info("Starting processing...")
     for image_data, writer in iterator.iter_as_numpy():
-        label_img = segment_cell(int_img=image_data, sigma=sigma, max_size=max_size)
+        label_img = segment_cell(input_img=image_data, sigma=sigma, max_size=max_size)
         label_img = np.where(label_img == 0, 0, label_img + max_label)
-        max_label = max(max_label, label_img.max())
+        max_label = max(max_label, int(label_img.max()))
         writer(label_img)
     # No need to call label.consolidate()
     # SegmentationIterator handles this
