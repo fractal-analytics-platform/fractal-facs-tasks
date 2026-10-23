@@ -118,7 +118,7 @@
       "tags": [
         "FACS"
       ],
-      "docs_info": "### Purpose\n- Convert data from S8 Flow Cytometer (TIFF files) to OME-Zarr format.\n\n### Outputs\n- A single mosaic OME-Zarr file containing all converted images. Optionally in plate format\n\n### Limitations\n- POC implementation, only tested on a single dataset",
+      "docs_info": "### Purpose\n- Convert data from S8 Flow Cytometer (TIFF files) to OME-Zarr format.\n- Optionally store the event data of the matching FCS file as a feature table.\n\n### Outputs\n- A single mosaic OME-Zarr file containing all converted images. Optionally in plate format\n- If an FCS file is provided, an \"fcs_events\" feature table with the raw values of all\n  events, indexed by \"event_index\" (matching the FOV ROI names).\n\n### Limitations\n- POC implementation, only tested on a single dataset\n- FCS values are stored as float32, integer parameters need to be reinterpreted\n",
       "type": "converter_non_parallel",
       "executable_non_parallel": "converters/fcf_s8_converter.py",
       "meta_non_parallel": {
@@ -137,6 +137,19 @@
             "title": "Tiff Folder Path",
             "type": "string",
             "description": "Path to the folder containing the TIFF files of the S8 FACS to be converted."
+          },
+          "fcs_file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fcs File Path",
+            "description": "Path to the FCS file of the same recording. If provided, all its events are saved as the \"fcs_events\" feature table, with the raw values of all parameters and an \"event_index\" column matching the names of the ROIs in \"FOV_ROI_table\". Values are stored as float32, so integer parameters show up as meaningless floats until reinterpreted (e.g. with `.view(np.uint32)`)."
           },
           "zarr_name": {
             "anyOf": [

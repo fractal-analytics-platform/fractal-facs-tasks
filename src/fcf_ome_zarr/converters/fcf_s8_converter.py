@@ -6,9 +6,12 @@ from typing import Optional
 
 import ngio
 import numpy as np
+import polars as pl
 import tifffile
+from flowkit import Sample
 from ngio import Roi
-from ngio.tables import RoiTable
+from ngio.tables import FeatureTable, RoiTable
+from ngio.tables.v1._feature_table import FeatureTableMeta
 from pydantic import validate_call
 from zarr.storage import LocalStore
 
@@ -23,6 +26,7 @@ def fcf_s8_converter(
     zarr_dir: str,
     # Input parameters
     tiff_folder_path: str,
+    fcs_file_path: Optional[str] = None,
     zarr_name: Optional[str] = None,
     fake_a_plate: bool = True,
     add_z_singleton: bool = False,
@@ -34,7 +38,8 @@ def fcf_s8_converter(
     Each TIFF is placed in its own tile of the mosaic and recorded as a ROI in
     the "FOV_ROI_table". Channel labels are read from the TIFF PageName tags,
     with special characters (e.g. whitespace, "/", parentheses) replaced by
-    underscores.
+    underscores. If an FCS file is given, its raw event data is saved as the
+    "fcs_events" feature table.
 
     Args:
         zarr_dir: path of the directory where the new OME-Zarrs will be
@@ -42,6 +47,12 @@ def fcf_s8_converter(
             (standard argument for Fractal tasks, managed by Fractal server).
         tiff_folder_path: Path to the folder containing the TIFF files of the
             S8 FACS to be converted.
+        fcs_file_path: Path to the FCS file of the same recording. If provided,
+            all its events are saved as the "fcs_events" feature table, with
+            the raw values of all parameters and an "event_index" column
+            matching the names of the ROIs in "FOV_ROI_table". Values are
+            stored as float32, so integer parameters show up as meaningless
+            floats until reinterpreted (e.g. with `.view(np.uint32)`).
         zarr_name: Name of the output OME-Zarr, without the ".ome.zarr"
             extension. Used for the plate if `fake_a_plate` is True, otherwise
             for the image. If None, the name of the TIFF folder is used, with
@@ -160,6 +171,11 @@ def fcf_s8_converter(
         "image_ROI_table", image_roi_table, overwrite=overwrite
     )
 
+    if fcs_file_path is not None:
+        ome_zarr_container.add_table(
+            "fcs_events", read_fcs_events(Path(fcs_file_path)), overwrite=overwrite
+        )
+
     ngio_image.consolidate(mode="auto")
     # Set contrast limits for viewers
     ome_zarr_container.set_channel_windows_with_percentiles(percentiles=(0.05, 99.995))
@@ -167,6 +183,20 @@ def fcf_s8_converter(
     return {
         "image_list_updates": [{"zarr_url": str(zarr_url), "attributes": attributes}]
     }
+
+
+def read_fcs_events(fcs_path: Path) -> FeatureTable:
+    """Read all events of an FCS file into a feature table indexed by event_index.
+
+    Columns are the raw ($PnN) parameter names, unchanged. Values are read as
+    float32, even for parameters stored as integers. The event_index is the
+    position of the event in the file, which matches the FOV ROI names.
+    """
+    sample = Sample(fcs_path)
+    events = sample.get_events(source="raw").astype(np.float32)
+    data = pl.DataFrame(events, schema=sample.pnn_labels, orient="row")
+    data = data.with_columns(event_index=pl.Series(np.arange(len(data))))
+    return FeatureTable(data, meta=FeatureTableMeta(index_key="event_index"))
 
 
 if __name__ == "__main__":
