@@ -162,7 +162,7 @@ def _get_channel_labels(tif: tifffile.TiffFile) -> tuple[str, ...]:
     Labels are sanitized with `sanitize_string`. Pages without a PageName tag,
     or whose label is empty after sanitizing, fall back to "channel_{i}".
     Raises a ValueError if two labels are identical after sanitizing.
-    
+
     NOTE: this is specific to the BD S8 instrument. It is a candidate for a
     per-instrument implementation if more instruments are supported.
     """
