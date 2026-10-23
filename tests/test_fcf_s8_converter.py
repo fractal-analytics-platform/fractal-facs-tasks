@@ -92,7 +92,7 @@ def test_converter_writes_image_inside_fake_plate(
     assert plate.images_paths() == ["A/01/0"]
 
     image = open_ome_zarr_container(image_update["zarr_url"]).get_image()
-    assert image.shape == (6, 1, 146, 208)
+    assert image.shape == (6, 146, 208)
 
 
 @pytest.mark.parametrize("zarr_name", [None, "my_mosaic"])
@@ -137,7 +137,7 @@ def test_convert_first_x_tiffs_skips_remaining_files(
     image = open_ome_zarr_container(zarr_url).get_image()
 
     # 4 tiles of (73, 104) pixels in a 2 x 2 grid
-    assert image.shape == (6, 1, 146, 208)
+    assert image.shape == (6, 146, 208)
 
 
 def test_mixed_folder_raises(tmp_path: Path, mixed_tiff_dir: Path):
@@ -156,7 +156,7 @@ def test_converter_with_single_channel_tiffs(
     image = open_ome_zarr_container(run_converter(tmp_path, tiff_dir)).get_image()
 
     # 2 tiles of (20, 30) pixels in a 1 x 2 grid
-    assert image.shape == (1, 1, 20, 60)
+    assert image.shape == (1, 20, 60)
 
 
 def test_zarr_name_from_folder_with_spaces(tmp_path: Path, example_data_dir: Path):
