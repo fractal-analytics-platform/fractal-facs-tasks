@@ -7,12 +7,21 @@ import pytest
 import tifffile
 
 EXAMPLE_DATA_DIR = Path(__file__).parent / "example_data" / "Demo_data_S8"
+# First 4 events (matching the TIFFs) and 8 parameters of the full FCS export,
+# written by example_data/make_test_fcs.py
+EXAMPLE_FCS_PATH = Path(__file__).parent / "example_data" / "Demo recording_10000.fcs"
 
 
 @pytest.fixture
 def example_data_dir() -> Path:
     """S8 example recording, with TIFFs in subfolders as written by the instrument."""
     return EXAMPLE_DATA_DIR
+
+
+@pytest.fixture
+def example_fcs_path() -> Path:
+    """FCS file of the S8 example recording, reduced to the 4 imaged events."""
+    return EXAMPLE_FCS_PATH
 
 
 @pytest.fixture

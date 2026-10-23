@@ -166,3 +166,45 @@ def test_zarr_name_from_folder_with_spaces(tmp_path: Path, example_data_dir: Pat
     zarr_url = run_converter(tmp_path, tiff_dir)
 
     assert zarr_url == tmp_path / "Demo_recording.ome.zarr"
+
+
+def test_converter_writes_fcs_events_table(
+    tmp_path: Path, example_data_dir: Path, example_fcs_path: Path
+):
+    ome_zarr = open_ome_zarr_container(
+        run_converter(tmp_path, example_data_dir, fcs_file_path=str(example_fcs_path))
+    )
+
+    assert "fcs_events" in ome_zarr.list_tables()
+    table = ome_zarr.get_feature_table("fcs_events")
+    df = table.dataframe
+
+    # Raw parameter names are kept, not sanitized
+    assert list(df.columns) == [
+        "FSC-A",
+        "FSC-H",
+        "SSC (Imaging)-A",
+        "LightLoss (Imaging)-A",
+        "Size (FSC)",
+        "Total Intensity (FSC)",
+        "Time",
+        "SpectralEventWidth",
+    ]
+    assert (df.dtypes == np.float32).all()
+
+    # One row per event, indexed like the FOV ROIs
+    rois = ome_zarr.get_roi_table("FOV_ROI_table").rois()
+    assert df.index.name == "event_index"
+    assert [str(i) for i in df.index] == [roi.name for roi in rois]
+
+    # Raw values of event 1 in the full FCS export
+    assert df.loc[1, "Size (FSC)"] == 1179
+    assert df.loc[1, "SpectralEventWidth"] == 4675
+    assert df.loc[1, "Time"] == pytest.approx(0.41319016)
+
+
+def test_converter_without_fcs_writes_no_fcs_table(
+    tmp_path: Path, example_data_dir: Path
+):
+    ome_zarr = open_ome_zarr_container(run_converter(tmp_path, example_data_dir))
+    assert "fcs_events" not in ome_zarr.list_tables()
