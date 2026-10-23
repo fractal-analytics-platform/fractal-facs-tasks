@@ -25,7 +25,7 @@ def fcf_s8_converter(
     tiff_folder_path: str,
     zarr_name: Optional[str] = None,
     fake_a_plate: bool = True,
-    add_z_singleton: bool = True,
+    add_z_singleton: bool = False,
     convert_first_x_tiffs: Optional[int] = None,
     overwrite: bool = True,
 ) -> dict | None:
@@ -54,7 +54,7 @@ def fcf_s8_converter(
         add_z_singleton: Whether to add a singleton Z dimension to the OME-Zarr.
             This is useful to use some of the tools (like the Fractal feature
             explorer) that require Z singleton dimensions.
-            Defaults to True.
+            Defaults to False.
         convert_first_x_tiffs: If provided, only the first X TIFF files in the
             folder are converted. This is useful for testing with a smaller
             number of files. If None, all TIFF files in the folder are converted.

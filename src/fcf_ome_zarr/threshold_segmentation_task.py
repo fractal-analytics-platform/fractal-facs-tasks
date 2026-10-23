@@ -1,80 +1,57 @@
-"""This is the Python module for my_task."""
+"""Threshold segmentation of cells in the light-loss channel of BD S8 FOVs."""
 
 import logging
+from typing import Any
 
 import numpy as np
+import scipy.ndimage as ndi
 from ngio import ChannelSelectionModel, open_ome_zarr_container
-from ngio.images._masked_image import MaskedImage
-from ngio.iterators import MaskedSegmentationIterator, SegmentationIterator
+from ngio.iterators import SegmentationIterator
+from numpy.typing import NDArray
 from pydantic import validate_call
+from skimage.exposure import rescale_intensity
+from skimage.filters import threshold_yen
 from skimage.measure import label
-from skimage.morphology import ball, dilation, disk, opening, remove_small_objects
-
-from fcf_ome_zarr.utils import IteratorConfiguration, MaskingConfiguration
+from skimage.morphology import remove_small_objects
 
 logger = logging.getLogger("threshold_segmentation_task")
 
+# Each FOV holds a single event, so segmentation always runs FOV by FOV
+FOV_ROI_TABLE = "FOV_ROI_table"
+DEFAULT_CHANNEL = ChannelSelectionModel(identifier="LightLoss_Imaging", mode="label")
 
-def segmentation_function(
-    int_img: np.ndarray, threshold: int, min_size: int = 50
-) -> np.ndarray:
-    """Example segmentation function.
 
-    This function will need to be adapted to the specific segmentation method.
+def segment_cell(
+    input_img: NDArray[Any],
+    sigma: tuple[float, float] = (1.5, 1.0),
+    max_size: int = 64,
+) -> NDArray[np.uint32]:
+    """Segment cells that appear darker than the background, as in the light-loss signal
+
+    The image is contrast-stretched, smoothed with a Gaussian filter and
+    thresholded with Yen's method. Holes are filled, small objects removed and
+    the remaining objects labeled.
 
     Args:
-        int_img (np.ndarray): Input image to be processed
-        threshold (int): Threshold value for binarization
-        min_size (int): Minimum size of objects to keep
+        input_img (NDArray[Any]): 2D (y, x) input image.
+        sigma (tuple[float, float]): Standard deviation of the Gaussian smoothing
+            along (y, x).
+        max_size (int): Objects with this many pixels or fewer are removed.
 
     Returns:
-        label_img (np.ndarray): Labeled image
+        label_img (NDArray[np.uint32]): Labeled image with the same shape as the
+            input.
     """
-    # Thresholding the images
-    binary_img = int_img >= threshold
+    image = rescale_intensity(input_img)
+    image_smooth = ndi.gaussian_filter(image, sigma=sigma)
 
-    # Removing small objects
-    cleaned_img = remove_small_objects(binary_img, max_size=min_size)
-    # Opening to separate touching objects
-    if cleaned_img.ndim == 2:
-        selem = disk(1)
-    else:
-        selem = ball(1)
-    opened_img = opening(cleaned_img, selem)
-
-    # Optional: Dilation to restore object size
-    dilated_img = dilation(opened_img, selem)
-
-    # Labeling the processed image
-    label_img = label(dilated_img, connectivity=1)
+    th = threshold_yen(image_smooth)
+    binary_img = image_smooth < th
+    binary_img = ndi.binary_fill_holes(binary_img)
+    binary_img = remove_small_objects(binary_img, max_size=max_size)
+    label_img = label(binary_img, connectivity=1)
     assert isinstance(label_img, np.ndarray)
-    return label_img.astype("uint32")
-
-
-def load_masked_image(
-    ome_zarr,
-    masking_configuration: MaskingConfiguration,
-) -> MaskedImage:
-    """Load a masked image from an OME-Zarr based on the masking configuration.
-
-    Args:
-        ome_zarr: The OME-Zarr container.
-        masking_configuration (MaskingConfiguration): Configuration for masking.
-
-    """
-    if masking_configuration.mode == "Table Name":
-        masking_table_name = masking_configuration.identifier
-        masking_label_name = None
-    else:
-        masking_label_name = masking_configuration.identifier
-        masking_table_name = None
-    logger.info(f"Using masking with {masking_table_name=}, {masking_label_name=}")
-
-    # Base Iterator with masking
-    masked_image = ome_zarr.get_masked_image(
-        masking_label_name=masking_label_name, masking_table_name=masking_table_name
-    )
-    return masked_image
+    return label_img.astype(np.uint32)
 
 
 @validate_call
@@ -83,32 +60,29 @@ def threshold_segmentation_task(
     # Fractal managed parameters
     zarr_url: str,
     # Segmentation parameters
-    channel: ChannelSelectionModel,
+    channel: ChannelSelectionModel = DEFAULT_CHANNEL,
     label_name: str | None = None,
-    threshold: int,
-    min_size: int = 50,
-    # Iteration parameters
-    iterator_configuration: IteratorConfiguration | None = None,
+    sigma: tuple[float, float] = (1.5, 1.0),
+    max_size: int = 64,
     overwrite: bool = True,
 ) -> None:
-    """Segment an image using a simple thresholding method.
+    """Segment cells using automatic thresholding.
 
-    This taks demostrates how to use the SegmentationIterator and
-    MaskedSegmentationIterator to perform segmentation. We provide a separate
-    utility package with some helper functions and classes to streamline the development
-    of measurement tasks. For more infos check:
-    /fractal-tasks-utils
+    Cells are expected to be darker than the background (e.g. light-loss
+    channel). Segmentation runs separately for each ROI of the FOV_ROI_table,
+    and label are unique across the entire mosaic.
+    Images are expected to be 2D, optionally with a singleton z axis, which is
+    preserved in the output label.
 
     Args:
         zarr_url (str): URL to the OME-Zarr container
         channel (ChannelSelectionModel): Select the input channel to be used for
-            segmentation.
+            segmentation. Defaults to the "LightLoss_Imaging" channel.
         label_name (str | None): Name of the resulting label image. If not provided,
             it will be set to "<channel_identifier>_thresholded".
-        threshold (float): Threshold value to be applied.
-        min_size (int): Minimum size of objects. Smaller objects are filtered out.
-        iterator_configuration (IteratorConfiguration | None): Advanced
-            configuration to control masked and ROI-based iteration.
+        sigma (tuple[float, float]): Standard deviation of the Gaussian smoothing
+            along (y, x).
+        max_size (int): Objects with this many pixels or fewer are removed.
         overwrite (bool): Whether to overwrite an existing label image.
             Defaults to True.
     """
@@ -121,71 +95,37 @@ def threshold_segmentation_task(
 
     if label_name is None:
         label_name = f"{channel.identifier}_thresholded"
-    label = ome_zarr.derive_label(name=label_name, overwrite=overwrite)
-    logger.info(f"Output label image: {label=}")
+    label_ngio = ome_zarr.derive_label(name=label_name, overwrite=overwrite)
+    logger.info(f"Output label image: {label_ngio=}")
 
-    if iterator_configuration is None:
-        iterator_configuration = IteratorConfiguration()
-
-    if iterator_configuration.masking is None:
-        # Create a basic SegmentationIterator without masking
-        image = ome_zarr.get_image()
-        logger.info(f"{image=}")
-        iterator = SegmentationIterator(
-            input_image=image,
-            output_label=label,
-            channel_selection=channel,
-            axes_order="zyx",
-            consolidation_mode="auto",
-        )
-    else:
-        # Since masking is requested, we need to determine load a masking image
-        masked_image = load_masked_image(
-            ome_zarr=ome_zarr,
-            masking_configuration=iterator_configuration.masking,
-        )
-        logger.info(f"{masked_image=}")
-        # A masked iterator is created instead of a basic segmentation iterator
-        # This will do two major things:
-        # 1) It will iterate only over the regions of interest defined by the
-        #   masking table or label image
-        # 2) It will only write the segmentation results within the masked regions
-        iterator = MaskedSegmentationIterator(
-            input_image=masked_image,
-            output_label=label,
-            channel_selection=channel,
-            axes_order="zyx",
-            consolidation_mode="auto",
-        )
-    # Make sure that if we have a time axis, we iterate over it
-    # Strict=False means that if there no z axis or z is size 1, it will still work
-    # If your segmentation needs requires a volume, use strict=True
-    iterator = iterator.by_zyx(strict=False)
+    image_ngio = ome_zarr.get_image()
+    logger.info(f"{image_ngio=}")
+    iterator = SegmentationIterator(
+        input_image=image_ngio,
+        output_label=label_ngio,
+        channel_selection=channel,
+        axes_order="yx",
+        consolidation_mode="auto",
+    )
+    # Iterate over 2D (y, x) planes; ngio maps them back onto the label axes,
+    # so a singleton z axis is preserved
+    iterator = iterator.by_yx()
     logger.info(f"Iterator created: {iterator=}")
 
-    if iterator_configuration.roi_table is not None:
-        # If a ROI table is provided, we load it and use it to further restrict
-        # the iteration to the ROIs defined in the table
-        # Be aware that this is not an alternative to masking
-        # but only an additional restriction
-        table = ome_zarr.get_generic_roi_table(name=iterator_configuration.roi_table)
-        logger.info(f"ROI table retrieved: {table=}")
-        iterator = iterator.product(table)
-        logger.info(f"Iterator updated with ROI table: {iterator=}")
+    table = ome_zarr.get_generic_roi_table(name=FOV_ROI_TABLE)
+    logger.info(f"ROI table retrieved: {table=}")
+    iterator = iterator.product(table)
+    logger.info(f"Iterator updated with ROI table: {iterator=}")
 
     # Keep track of the maximum label to ensure unique across iterations
-    max_label = 0
-    #
+    max_label: int = 0
+
     # Core processing loop
-    #
     logger.info("Starting processing...")
     for image_data, writer in iterator.iter_as_numpy():
-        label_img = segmentation_function(
-            int_img=image_data, threshold=threshold, min_size=min_size
-        )
-        # Ensure unique labels across different chunks
+        label_img = segment_cell(input_img=image_data, sigma=sigma, max_size=max_size)
         label_img = np.where(label_img == 0, 0, label_img + max_label)
-        max_label = max(max_label, label_img.max())
+        max_label = max(max_label, int(label_img.max()))
         writer(label_img)
     # No need to call label.consolidate()
     # SegmentationIterator handles this
