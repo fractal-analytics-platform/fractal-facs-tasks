@@ -4,11 +4,11 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+import flowio
 import ngio
 import numpy as np
 import polars as pl
 import tifffile
-from flowkit import Sample
 from ngio import Roi
 from ngio.tables import FeatureTable, RoiTable
 from ngio.tables.v1._feature_table import FeatureTableMeta
@@ -192,9 +192,9 @@ def read_fcs_events(fcs_path: Path) -> FeatureTable:
     float32, even for parameters stored as integers. The event_index is the
     position of the event in the file, which matches the FOV ROI names.
     """
-    sample = Sample(fcs_path)
-    events = sample.get_events(source="raw").astype(np.float32)
-    data = pl.DataFrame(events, schema=sample.pnn_labels, orient="row")
+    fcs = flowio.FlowData(fcs_path)
+    events = fcs.as_array(preprocess=False).astype(np.float32)
+    data = pl.DataFrame(events, schema=fcs.pnn_labels, orient="row")
     data = data.with_columns(event_index=pl.Series(np.arange(len(data))))
     return FeatureTable(data, meta=FeatureTableMeta(index_key="event_index"))
 
