@@ -46,12 +46,17 @@ def test_columns_named_by_channel(zarr_url: str, example_channel_labels: tuple):
 
 
 def test_features_match_image(zarr_url: str, example_channel_labels: tuple):
-    """One row per object, with area and intensities computed on the image."""
+    """One row per object, with features computed on the image.
+
+    Morphology features are in physical units, from the (y, x) pixel size.
+    """
     region_props_features_task(zarr_url=zarr_url, label_image_name=LABEL_NAME)
 
     ome_zarr = open_ome_zarr_container(zarr_url)
     df = ome_zarr.get_feature_table(TABLE_NAME).dataframe
-    image = ome_zarr.get_image().get_as_numpy(axes_order="cyx")
+    image_ngio = ome_zarr.get_image()
+    image = image_ngio.get_as_numpy(axes_order="cyx")
+    pixel_size = np.array([image_ngio.pixel_size.y, image_ngio.pixel_size.x])
     label = ome_zarr.get_label(LABEL_NAME).get_as_numpy(axes_order="yx")
 
     label_ids = sorted(set(np.unique(label).tolist()) - {0})
@@ -61,7 +66,12 @@ def test_features_match_image(zarr_url: str, example_channel_labels: tuple):
     for label_id in label_ids:
         mask = label == label_id
         row = df.loc[df.index.astype(int) == label_id].iloc[0]
-        assert row["area"] == mask.sum()
+        assert row["area"] == pytest.approx(mask.sum() * pixel_size.prod())
+        # Major axis from the physical pixel coordinates. With anisotropic
+        # pixels, this also checks the (y, x) order of the spacing
+        coords = np.argwhere(mask) * pixel_size
+        variance = np.linalg.eigvalsh(np.cov(coords.T, bias=True)).max()
+        assert row["axis_major_length"] == pytest.approx(4 * np.sqrt(variance))
         for channel_img, channel in zip(image, example_channel_labels, strict=True):
             pixels = channel_img[mask].astype(np.float64)
             assert row[f"mean_intensity-{channel}"] == pytest.approx(
