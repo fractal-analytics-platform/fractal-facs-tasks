@@ -14,7 +14,6 @@ from pathlib import Path
 
 import flowio
 import numpy as np
-from flowkit import Sample
 
 N_EVENTS = 4
 COLUMNS = [
@@ -31,9 +30,9 @@ COLUMNS = [
 
 def main(full_fcs_path: Path, output_fcs_path: Path) -> None:
     """Write the first N_EVENTS events and COLUMNS of the full FCS file."""
-    sample = Sample(full_fcs_path)
-    col_idx = [sample.pnn_labels.index(name) for name in COLUMNS]
-    events = sample.get_events(source="raw")[:N_EVENTS, col_idx].astype(np.float32)
+    fcs = flowio.FlowData(full_fcs_path)
+    col_idx = [fcs.pnn_labels.index(name) for name in COLUMNS]
+    events = fcs.as_array(preprocess=False)[:N_EVENTS, col_idx].astype(np.float32)
     with open(output_fcs_path, "wb") as fh:
         flowio.create_fcs(fh, events.ravel(), COLUMNS)
 
