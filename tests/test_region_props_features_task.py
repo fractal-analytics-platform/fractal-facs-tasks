@@ -1,100 +1,83 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
-from ngio import create_synthetic_ome_zarr
+from ngio import open_ome_zarr_container
 
+from fcf_ome_zarr.converters.fcf_s8_converter import fcf_s8_converter
 from fcf_ome_zarr.region_props_features_task import (
+    INTENSITY_PROPERTIES,
     region_props_features_task,
 )
+from fcf_ome_zarr.threshold_segmentation_task import threshold_segmentation_task
+
+LABEL_NAME = "LightLoss_Imaging_thresholded"
+TABLE_NAME = "region_props_features"
 
 
-@pytest.mark.parametrize(
-    "shape, axes",
-    [
-        ((64, 64), "yx"),
-        ((1, 64, 64), "cyx"),
-        ((3, 64, 64), "cyx"),
-        ((4, 64, 64), "tyx"),
-        ((1, 64, 64), "zyx"),
-        ((1, 1, 64, 64), "czyx"),
-        ((1, 10, 64, 64), "czyx"),
-        ((1, 2, 64, 64), "czyx"),
-        ((1, 1, 64, 64), "tzyx"),
-        ((1, 3, 64, 64), "tcyx"),
-        ((1, 1, 10, 64, 64), "tczyx"),
-    ],
-)
-def test_region_props_features_task(tmp_path: Path, shape: tuple[int, ...], axes: str):
-    """Basic test for the region props features task."""
-    test_data_path = tmp_path / "data.zarr"
-
-    ome_zarr = create_synthetic_ome_zarr(
-        store=test_data_path,
-        shape=shape,
-        overwrite=False,
-        axes_names=axes,
+@pytest.fixture(params=[False, True], ids=["yx", "z_singleton"])
+def zarr_url(request: pytest.FixtureRequest, tmp_path: Path, example_data_dir: Path):
+    """OME-Zarr from the S8 converter, segmented by the threshold segmentation."""
+    result = fcf_s8_converter(
+        tiff_folder_path=str(example_data_dir),
+        zarr_dir=str(tmp_path),
+        fake_a_plate=False,
+        add_z_singleton=request.param,
     )
-    region_props_features_task(
-        zarr_url=str(test_data_path), label_image_name="nuclei", overwrite=False
-    )
-
-    # Check that the feature table was created
-    assert "region_props_features" in ome_zarr.list_tables()
-    table_df = ome_zarr.get_feature_table(name="region_props_features").dataframe
-    # Check that the table is not empty
-    assert not table_df.empty
-    # Check if area and mean_intensity columns are present
-    assert all(col in table_df.columns for col in ["area", "mean_intensity-0"]), (
-        table_df.columns
-    )
-    # Check if label is the index
-    assert table_df.index.name == "label"
-    # DISCLAIMER: This is only a very basic test.
-    # More comprehensive tests should be implemented based on the expected
-    # results not only the presence of a feature table.
+    assert result is not None
+    zarr_url = result["image_list_updates"][0]["zarr_url"]
+    threshold_segmentation_task(zarr_url=zarr_url)
+    return zarr_url
 
 
-def test_region_props_features_task_rescaling(tmp_path: Path):
-    """Test the region props features task with label image at different resolutions."""
-    test_data_path = tmp_path / "data.zarr"
-    shape = (1, 10, 64, 64)
-    axes = "czyx"
+def test_columns_named_by_channel(zarr_url: str, example_channel_labels: tuple):
+    region_props_features_task(zarr_url=zarr_url, label_image_name=LABEL_NAME)
 
-    ome_zarr = create_synthetic_ome_zarr(
-        store=test_data_path,
-        shape=shape,
-        overwrite=False,
-        axes_names=axes,
-    )
-    # To test the on-the-fly rescaling of the label image,
-    # we create a label image at a different resolution than the image.
-    # By creating the label image at half the resolution of the image,
-    # we ensure that the label image has a different shape than the image.
-    label = ome_zarr.derive_label(
-        name="nuclei_different_resolution", ref_image=ome_zarr.get_image(path="1")
-    )
-    label.set_array(
-        patch=ome_zarr.get_label(name="nuclei", path="1").get_as_numpy(),
-    )
-    label.consolidate(mode="auto")
+    df = open_ome_zarr_container(zarr_url).get_feature_table(TABLE_NAME).dataframe
+    assert df.index.name == "label"
+    expected = {
+        f"{prop}-{channel}"
+        for prop in INTENSITY_PROPERTIES
+        for channel in example_channel_labels
+    }
+    assert expected <= set(df.columns)
+    # No leftover columns suffixed with the channel index
+    assert not [col for col in df.columns if col.rsplit("-", 1)[-1].isdigit()]
 
-    region_props_features_task(
-        zarr_url=str(test_data_path),
-        label_image_name="nuclei_different_resolution",
-        overwrite=False,
-    )
 
-    # Check that the feature table was created
-    assert "region_props_features" in ome_zarr.list_tables()
-    table_df = ome_zarr.get_feature_table(name="region_props_features").dataframe
-    # Check that the table is not empty
-    assert not table_df.empty
-    # Check if area and mean_intensity columns are present
-    assert all(col in table_df.columns for col in ["area", "mean_intensity-0"]), (
-        table_df.columns
-    )
-    # Check if label is the index
-    assert table_df.index.name == "label"
-    # DISCLAIMER: This is only a very basic test.
-    # More comprehensive tests should be implemented based on the expected
-    # results not only the presence of a feature table.
+def test_features_match_image(zarr_url: str, example_channel_labels: tuple):
+    """One row per object, with area and intensities computed on the image."""
+    region_props_features_task(zarr_url=zarr_url, label_image_name=LABEL_NAME)
+
+    ome_zarr = open_ome_zarr_container(zarr_url)
+    df = ome_zarr.get_feature_table(TABLE_NAME).dataframe
+    image = ome_zarr.get_image().get_as_numpy(axes_order="cyx")
+    label = ome_zarr.get_label(LABEL_NAME).get_as_numpy(axes_order="yx")
+
+    label_ids = sorted(set(np.unique(label).tolist()) - {0})
+    assert len(label_ids) > 0
+    assert sorted(df.index.astype(int).tolist()) == label_ids
+
+    for label_id in label_ids:
+        mask = label == label_id
+        row = df.loc[df.index.astype(int) == label_id].iloc[0]
+        assert row["area"] == mask.sum()
+        for channel_img, channel in zip(image, example_channel_labels, strict=True):
+            pixels = channel_img[mask].astype(np.float64)
+            assert row[f"mean_intensity-{channel}"] == pytest.approx(
+                pixels.mean(), rel=1e-5, abs=1e-9
+            )
+            assert row[f"max_intensity-{channel}"] == pytest.approx(
+                pixels.max(), rel=1e-5, abs=1e-9
+            )
+            assert row[f"min_intensity-{channel}"] == pytest.approx(
+                pixels.min(), rel=1e-5, abs=1e-9
+            )
+
+
+def test_no_overwrite(zarr_url: str):
+    region_props_features_task(zarr_url=zarr_url, label_image_name=LABEL_NAME)
+    with pytest.raises(FileExistsError):
+        region_props_features_task(
+            zarr_url=zarr_url, label_image_name=LABEL_NAME, overwrite=False
+        )

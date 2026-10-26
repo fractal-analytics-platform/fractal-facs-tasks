@@ -8,7 +8,7 @@
         "Instance Segmentation",
         "Classical segmentation"
       ],
-      "docs_info": "### Purpose\n- Segment cells darker than the background using Gaussian smoothing, automatic (Yen) thresholding, hole filling & size filtering.\n\n### Outputs\n- A label image\n",
+      "docs_info": "### Purpose\n- Segment cells darker than the background using Gaussian smoothing, automatic (Yen) thresholding, hole filling & size filtering.\n\n### Outputs\n- A label image\n- A \"<label_name>_to_event\" feature table mapping each label to its FCS event (\"event_index\" column)\n",
       "type": "parallel",
       "executable_parallel": "threshold_segmentation_task.py",
       "meta_parallel": {
@@ -102,7 +102,7 @@
             "default": true,
             "title": "Overwrite",
             "type": "boolean",
-            "description": "Whether to overwrite an existing label image. Defaults to True."
+            "description": "Whether to overwrite an existing label image and label to event table. Defaults to True."
           }
         },
         "required": [
@@ -237,19 +237,6 @@
             "title": "Output Table Name",
             "type": "string",
             "description": "Name for the output feature table."
-          },
-          "refercene_roi_table": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Refercene Roi Table",
-            "description": "Optional ROI table for reference. If provided, it is measured which ROI from this table every object centroid is in."
           },
           "overwrite": {
             "default": true,
