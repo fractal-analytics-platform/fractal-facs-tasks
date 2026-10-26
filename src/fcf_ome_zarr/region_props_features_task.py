@@ -1,7 +1,6 @@
 """This is the Python module for my_task."""
 
 import logging
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -14,10 +13,29 @@ from skimage import measure
 
 logger = logging.getLogger("region_props_features_task")
 
+INTENSITY_PROPERTIES = (
+    "mean_intensity",
+    "max_intensity",
+    "min_intensity",
+    "std_intensity",
+)
 
-def region_props_features_func(image: np.ndarray, label: np.ndarray, roi: Roi) -> dict:
-    """Extract region properties features from a label image within a ROI."""
+
+def region_props_features_func(
+    image: np.ndarray,
+    label: np.ndarray,
+    roi: Roi,
+    channel_labels: list[str],
+) -> dict:
+    """Extract region properties features from a label image within a ROI.
+
+    Intensity features are computed for every channel of the image and named
+    "<property>-<channel label>".
+    """
     assert image.ndim in (3, 4), "Image must be 3D yxc or 4D yxzc "
+    assert image.shape[-1] == len(channel_labels), (
+        "Number of channel labels must match the image channels"
+    )
     assert image.ndim == label.ndim, (
         "Image and label must have the same number of dimensions"
     )
@@ -42,12 +60,14 @@ def region_props_features_func(image: np.ndarray, label: np.ndarray, roi: Roi) -
             "axis_major_length",
             "axis_minor_length",
             "solidity",
-            "mean_intensity",
-            "max_intensity",
-            "min_intensity",
-            "std_intensity",
+            *INTENSITY_PROPERTIES,
         ],
     )
+    # regionprops suffixes intensity features with the channel index,
+    # replace it with the channel label
+    for prop in INTENSITY_PROPERTIES:
+        for i, channel_label in enumerate(channel_labels):
+            props[f"{prop}-{channel_label}"] = props.pop(f"{prop}-{i}")
     # Add some more metadata columns
     # for example, the ROI name and timepoint
     num_regions = len(props["label"])
@@ -84,7 +104,6 @@ def region_props_features_task(
     # Input parameters
     label_image_name: str,
     output_table_name: str = "region_props_features",
-    refercene_roi_table: Optional[str] = None,
     overwrite: bool = True,
 ) -> None:
     """Extract region props. features from a OME-Zarr image and save them as a table.
@@ -98,9 +117,6 @@ def region_props_features_task(
         zarr_url (str): URL to the OME-Zarr container
         label_image_name (str): Name of the label image to analyze.
         output_table_name (str): Name for the output feature table.
-        refercene_roi_table (str): Optional ROI table for reference. If
-            provided, it is measured which ROI from this table every object
-            centroid is in.
         overwrite (bool): Whether to overwrite an existing feature table.
             Defaults to True.
     """
@@ -168,6 +184,7 @@ def region_props_features_task(
             image=input_data,
             label=label_data,
             roi=roi,
+            channel_labels=image.channel_labels,
         )
         # Feature ExtractorIterator does not handle writing, so we collect
         # the tables and write them at the end
