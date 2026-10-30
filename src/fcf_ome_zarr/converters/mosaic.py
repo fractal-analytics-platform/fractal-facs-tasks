@@ -134,15 +134,15 @@ class MosaicLayout:
 
 
 def _get_pixel_size(tif: tifffile.TiffFile) -> PixelSize:
-    """Return the (y, x) pixel size in micrometers of a BD S8 TIFF.
+    """Return the (y, x) pixel size in micrometers of a BD S8/A8 TIFF.
 
-    The absolute values of the XResolution/YResolution tags written by the S8 are
-    off by orders of magnitude, so they are not used directly. Instead, the image
+    The absolute values of the XResolution/YResolution tags written by the S8/A8
+    are off by orders of magnitude, so they are not used directly. Instead, the image
     width is assumed to span the fixed 60 µm beam path of the instrument (104 spots
     across 60 µm, see 10.1126/science.abj3013), and only the ratio of the
     resolution tags is used to derive the y pixel size from the x pixel size.
 
-    NOTE: this is specific to the BD S8 instrument. It is a candidate for a
+    NOTE: this is specific to the BD S8/A8 instruments. It is a candidate for a
     per-instrument implementation if more instruments are supported.
     """
     # Width of the beam path imaged across x, in micrometers
@@ -163,7 +163,7 @@ def _get_channel_labels(tif: tifffile.TiffFile) -> tuple[str, ...]:
     or whose label is empty after sanitizing, fall back to "channel_{i}".
     Raises a ValueError if two labels are identical after sanitizing.
 
-    NOTE: this is specific to the BD S8 instrument. It is a candidate for a
+    NOTE: this is specific to the BD S8/A8 instruments. It is a candidate for a
     per-instrument implementation if more instruments are supported.
     """
     labels: list[str] = []

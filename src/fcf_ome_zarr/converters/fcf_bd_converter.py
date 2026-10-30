@@ -1,4 +1,4 @@
-"""Converter for the BD S8 cell sorter imaging data at UZH FCF"""
+"""Converter for the BD S8 and A8 cell sorter imaging data at UZH FCF"""
 
 import logging
 from pathlib import Path
@@ -20,7 +20,7 @@ from fcf_ome_zarr.utils import sanitize_string
 
 
 @validate_call
-def fcf_s8_converter(
+def fcf_bd_converter(
     *,
     # Fractal parameters
     zarr_dir: str,
@@ -33,7 +33,10 @@ def fcf_s8_converter(
     convert_first_x_tiffs: Optional[int] = None,
     overwrite: bool = True,
 ) -> dict | None:
-    """Convert BD S8 TIFF files into a single mosaic OME-Zarr image.
+    """Convert BD S8 or A8 TIFF files into a single mosaic OME-Zarr image.
+
+    Supports TIFFs extracted with the standalone BD image extractor or with
+    the FlowJo plugin.
 
     Each TIFF is placed in its own tile of the mosaic and recorded as a ROI in
     the "FOV_ROI_table". Channel labels are read from the TIFF PageName tags,
@@ -46,7 +49,7 @@ def fcf_s8_converter(
             created.
             (standard argument for Fractal tasks, managed by Fractal server).
         tiff_folder_path: Path to the folder containing the TIFF files of the
-            S8 FACS to be converted.
+            BD S8 or A8 FACS to be converted.
         fcs_file_path: Path to the FCS file of the same recording. If provided,
             all its events are saved as the "fcs_events" feature table, with
             the raw values of all parameters and an "event_index" column
@@ -203,4 +206,4 @@ def read_fcs_events(fcs_path: Path) -> FeatureTable:
 if __name__ == "__main__":
     from fractal_task_tools.task_wrapper import run_fractal_task
 
-    run_fractal_task(task_function=fcf_s8_converter)
+    run_fractal_task(task_function=fcf_bd_converter)

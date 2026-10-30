@@ -7,14 +7,14 @@ import pytest
 import tifffile
 from ngio import open_ome_zarr_container, open_ome_zarr_plate
 
-from fcf_ome_zarr.converters.fcf_s8_converter import fcf_s8_converter
+from fcf_ome_zarr.converters.fcf_bd_converter import fcf_bd_converter
 from fcf_ome_zarr.utils import sanitize_string
 from tests.conftest import ExampleBDDataset
 
 
 def run_converter(tmp_path: Path, tiff_dir: Path, **kwargs) -> Path:
     """Run the converter without a plate and return the mosaic zarr url."""
-    result = fcf_s8_converter(
+    result = fcf_bd_converter(
         tiff_folder_path=str(tiff_dir),
         zarr_dir=str(tmp_path),
         fake_a_plate=False,
@@ -86,7 +86,7 @@ def test_converter_writes_image_inside_fake_plate(
     tmp_path: Path, example_bd_dataset: ExampleBDDataset
 ):
     tiff_dir = example_bd_dataset.tiff_dir
-    result = fcf_s8_converter(
+    result = fcf_bd_converter(
         tiff_folder_path=str(tiff_dir),
         zarr_dir=str(tmp_path),
         fake_a_plate=True,
@@ -160,7 +160,7 @@ def test_convert_first_x_tiffs_skips_remaining_files(
 
 def test_mixed_folder_raises(tmp_path: Path, mixed_tiff_dir: Path):
     with pytest.raises(ValueError, match="mismatching channels"):
-        fcf_s8_converter(tiff_folder_path=str(mixed_tiff_dir), zarr_dir=str(tmp_path))
+        fcf_bd_converter(tiff_folder_path=str(mixed_tiff_dir), zarr_dir=str(tmp_path))
 
 
 def test_single_channel_tiffs_raise(tmp_path: Path, make_tiff: Callable[..., Path]):

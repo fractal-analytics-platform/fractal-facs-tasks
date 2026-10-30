@@ -18,12 +18,12 @@ TASK_LIST = [
         docs_info="file:docs_info/threshold_segmentation_task.md",
     ),
     ConverterNonParallelTask(
-        name="FCF S8 Converter",
-        executable="converters/fcf_s8_converter.py",
+        name="FCF BD Converter",
+        executable="converters/fcf_bd_converter.py",
         meta={"cpus_per_task": 1, "mem": 4000},
         category="Conversion",
         tags=["FACS"],
-        docs_info="file:docs_info/fcf_s8_converter.md",
+        docs_info="file:docs_info/fcf_bd_converter.md",
     ),
     ParallelTask(
         name="Region Props Features",

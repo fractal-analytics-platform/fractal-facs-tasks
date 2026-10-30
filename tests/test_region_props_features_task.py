@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from ngio import open_ome_zarr_container
 
-from fcf_ome_zarr.converters.fcf_s8_converter import fcf_s8_converter
+from fcf_ome_zarr.converters.fcf_bd_converter import fcf_bd_converter
 from fcf_ome_zarr.region_props_features_task import (
     INTENSITY_PROPERTIES,
     region_props_features_task,
@@ -17,8 +17,8 @@ TABLE_NAME = "region_props_features"
 
 @pytest.fixture(params=[False, True], ids=["yx", "z_singleton"])
 def zarr_url(request: pytest.FixtureRequest, tmp_path: Path, bd_s8_tiff_dir: Path):
-    """OME-Zarr from the S8 converter, segmented by the threshold segmentation."""
-    result = fcf_s8_converter(
+    """OME-Zarr from the BD converter, segmented by the threshold segmentation."""
+    result = fcf_bd_converter(
         tiff_folder_path=str(bd_s8_tiff_dir),
         zarr_dir=str(tmp_path),
         fake_a_plate=False,
