@@ -143,9 +143,10 @@ def fcf_s8_converter(
         )
 
         with tifffile.TiffFile(tif_path) as tif:
-            img = tif.asarray().astype(np.float32)
+            # Load all pages explicitly
+            img = tif.asarray(key=slice(None)).astype(np.float32)
             if img.ndim == 2:
-                img = img[None, :, :]  # add channel if missing
+                raise ValueError(f"TIFF image {tif_path} only contains one channel")
 
         # Place padded image into the mosaic tile
         padded = pad_to_shape(img, target_shape=layout.tile)

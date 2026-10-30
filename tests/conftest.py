@@ -1,5 +1,6 @@
 import shutil
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -7,10 +8,56 @@ import pytest
 import tifffile
 
 BD_S8_DIR = Path(__file__).parent / "example_data" / "BD_S8"
+BD_A8_DIR = Path(__file__).parent / "example_data" / "BD_A8"
+
+# Paths used for fixtures for the integration tests.
+# Run only on S8 data for now because the OME-Zarr structure is the same.
 EXAMPLE_DATA_DIR = BD_S8_DIR / "Demo_data_S8_img_extractor"
-# First 4 events (matching the TIFFs) and 8 parameters of the full FCS export,
-# written by example_data/make_test_fcs.py
 EXAMPLE_FCS_PATH = BD_S8_DIR / "Demo recording_10000.fcs"
+
+
+@dataclass(frozen=True)
+class ExampleBDDataset:
+    """Example recording with 4 TIFFs and the matching reduced FCS file."""
+
+    tiff_dir: Path
+    fcs_path: Path
+    # (y, x) size of the 2 x 2 mosaic, set by the largest TIFF
+    mosaic_size: tuple[int, int]
+    # Raw values of event 1 in the full FCS export
+    fcs_event_1: dict[str, float]
+
+
+EXAMPLE_BD_DATASETS = {
+    # TIFFs from the standalone image extractor: one 3D (c, y, x) series per file
+    "BD_S8": ExampleBDDataset(
+        tiff_dir=EXAMPLE_DATA_DIR,
+        fcs_path=EXAMPLE_FCS_PATH,
+        mosaic_size=(146, 208),
+        fcs_event_1={
+            "Size (FSC)": 1179,
+            "SpectralEventWidth": 4675,
+            "Time": 0.41319016,
+        },
+    ),
+    # TIFFs from the FlowJo plugin: one 2D (y, x) series per page
+    "BD_A8": ExampleBDDataset(
+        tiff_dir=BD_A8_DIR / "B01-Exp unstimulated fully stained_001_images_flowjo",
+        fcs_path=BD_A8_DIR / "B01-Exp unstimulated fully stained_001.fcs",
+        mosaic_size=(178, 208),
+        fcs_event_1={
+            "Size (FSC)": 1410,
+            "SpectralEventWidth": 5684,
+            "Time": 4.32101488,
+        },
+    ),
+}
+
+
+@pytest.fixture(params=list(EXAMPLE_BD_DATASETS))
+def example_bd_dataset(request: pytest.FixtureRequest) -> ExampleBDDataset:
+    """Each example dataset (BD S8 and BD A8) in turn."""
+    return EXAMPLE_BD_DATASETS[request.param]
 
 
 @pytest.fixture
@@ -27,9 +74,10 @@ def example_fcs_path() -> Path:
 
 @pytest.fixture
 def example_channel_labels() -> tuple[str, ...]:
-    """Sanitized channel labels from the PageName tags of the S8 example TIFFs.
+    """Sanitized channel labels from the PageName tags of the example TIFFs.
 
-    The raw tags are e.g. "LightLoss (Imaging)" and "Imaging_BP/534/46/LP/505".
+    The S8 and A8 example TIFFs have the same channels. The raw tags are e.g.
+    "LightLoss (Imaging)" and "Imaging_BP/534/46/LP/505".
     """
     return (
         "LightLoss_Imaging",

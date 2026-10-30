@@ -8,6 +8,8 @@ import tifffile
 from ngio import open_ome_zarr_container, open_ome_zarr_plate
 
 from fcf_ome_zarr.converters.fcf_s8_converter import fcf_s8_converter
+from fcf_ome_zarr.utils import sanitize_string
+from tests.conftest import ExampleBDDataset
 
 
 def run_converter(tmp_path: Path, tiff_dir: Path, **kwargs) -> Path:
@@ -26,55 +28,64 @@ def run_converter(tmp_path: Path, tiff_dir: Path, **kwargs) -> Path:
 
 @pytest.mark.parametrize("add_z_singleton", [True, False])
 def test_converter_writes_mosaic_image(
-    tmp_path: Path, example_data_dir: Path, add_z_singleton: bool
+    tmp_path: Path, example_bd_dataset: ExampleBDDataset, add_z_singleton: bool
 ):
     zarr_url = run_converter(
-        tmp_path, example_data_dir, add_z_singleton=add_z_singleton
+        tmp_path, example_bd_dataset.tiff_dir, add_z_singleton=add_z_singleton
     )
     image = open_ome_zarr_container(zarr_url).get_image()
 
-    # 4 tiles of (73, 104) pixels in a 2 x 2 grid
+    # 4 tiles in a 2 x 2 grid
     if add_z_singleton:
         assert image.axes == ("c", "z", "y", "x")
-        assert image.shape == (6, 1, 146, 208)
+        assert image.shape == (6, 1, *example_bd_dataset.mosaic_size)
     else:
         assert image.axes == ("c", "y", "x")
-        assert image.shape == (6, 146, 208)
+        assert image.shape == (6, *example_bd_dataset.mosaic_size)
     assert image.dtype == "float32"
     assert image.pixel_size.y == pytest.approx(60 / 104 / 1.2)
     assert image.pixel_size.x == pytest.approx(60 / 104)
 
 
 @pytest.mark.parametrize("add_z_singleton", [True, False])
-def test_fov_rois_match_source_tiffs(
-    tmp_path: Path, example_data_dir: Path, add_z_singleton: bool
+def test_fov_rois_match_source_tiff_pages(
+    tmp_path: Path, example_bd_dataset: ExampleBDDataset, add_z_singleton: bool
 ):
     zarr_url = run_converter(
-        tmp_path, example_data_dir, add_z_singleton=add_z_singleton
+        tmp_path, example_bd_dataset.tiff_dir, add_z_singleton=add_z_singleton
     )
     ome_zarr = open_ome_zarr_container(zarr_url)
     image = ome_zarr.get_image()
     rois = ome_zarr.get_roi_table("FOV_ROI_table").rois()
 
-    tif_paths = sorted(example_data_dir.rglob("*.tif*"))
+    tif_paths = sorted(example_bd_dataset.tiff_dir.rglob("*.tif*"))
     assert [roi.name for roi in rois] == [str(i) for i in range(len(tif_paths))]
 
     n_nonzero = 0
     for roi, tif_path in zip(rois, tif_paths, strict=True):
-        img = tifffile.imread(tif_path)
         roi_data = image.get_roi_as_numpy(roi)
         if add_z_singleton:
             roi_data = roi_data[:, 0]
-        assert np.array_equal(roi_data, img)
-        n_nonzero += np.count_nonzero(img)
+        # Read each page on its own, independently of how tifffile groups
+        # them into series (one 3D series for the standalone image extractor,
+        # one 2D series per page for the FlowJo plugin)
+        with tifffile.TiffFile(tif_path) as tif:
+            pages = [page.asarray() for page in tif.pages]
+        assert len(pages) == roi_data.shape[0]
+        for channel_data, page in zip(roi_data, pages, strict=True):
+            assert page.dtype == channel_data.dtype == np.float32
+            # Compare the raw bits, so NaNs and signed zeros must match too
+            assert np.array_equal(channel_data.view(np.uint32), page.view(np.uint32))
+            n_nonzero += np.count_nonzero(page)
 
     # Everything outside the ROIs is zero padding
     assert np.count_nonzero(image.get_as_numpy()) == n_nonzero
 
 
 def test_converter_writes_image_inside_fake_plate(
-    tmp_path: Path, example_data_dir: Path
+    tmp_path: Path, example_bd_dataset: ExampleBDDataset
 ):
+    example_data_dir = example_bd_dataset.tiff_dir
     result = fcf_s8_converter(
         tiff_folder_path=str(example_data_dir),
         zarr_dir=str(tmp_path),
@@ -82,7 +93,8 @@ def test_converter_writes_image_inside_fake_plate(
     )
     assert result is not None
     # The plate is named after the TIFF folder by default
-    plate_url = f"{example_data_dir.name}.ome.zarr"
+    # The test also checks if the folder name was properly sanitized
+    plate_url = f"{sanitize_string(example_data_dir.name)}.ome.zarr"
     (image_update,) = result["image_list_updates"]
     assert image_update["zarr_url"] == str(tmp_path / plate_url / "A/01/0")
     assert image_update["attributes"] == {"plate": plate_url, "well": "A01"}
@@ -92,21 +104,25 @@ def test_converter_writes_image_inside_fake_plate(
     assert plate.images_paths() == ["A/01/0"]
 
     image = open_ome_zarr_container(image_update["zarr_url"]).get_image()
-    assert image.shape == (6, 146, 208)
+    assert image.shape == (6, *example_bd_dataset.mosaic_size)
 
 
 @pytest.mark.parametrize("zarr_name", [None, "my_mosaic"])
 def test_zarr_name_sets_output_name(
-    tmp_path: Path, example_data_dir: Path, zarr_name: str | None
+    tmp_path: Path, example_bd_dataset: ExampleBDDataset, zarr_name: str | None
 ):
-    zarr_url = run_converter(tmp_path, example_data_dir, zarr_name=zarr_name)
+    zarr_url = run_converter(tmp_path, example_bd_dataset.tiff_dir, zarr_name=zarr_name)
 
-    expected_name = zarr_name or example_data_dir.name
+    expected_name = zarr_name or sanitize_string(example_bd_dataset.tiff_dir.name)
     assert zarr_url == tmp_path / f"{expected_name}.ome.zarr"
 
 
-def test_converter_writes_roi_tables(tmp_path: Path, example_data_dir: Path):
-    ome_zarr = open_ome_zarr_container(run_converter(tmp_path, example_data_dir))
+def test_converter_writes_roi_tables(
+    tmp_path: Path, example_bd_dataset: ExampleBDDataset
+):
+    ome_zarr = open_ome_zarr_container(
+        run_converter(tmp_path, example_bd_dataset.tiff_dir)
+    )
 
     assert set(ome_zarr.list_tables()) == {"FOV_ROI_table", "image_ROI_table"}
     assert len(ome_zarr.get_roi_table("FOV_ROI_table").rois()) == 4
@@ -114,10 +130,12 @@ def test_converter_writes_roi_tables(tmp_path: Path, example_data_dir: Path):
 
 
 def test_converter_writes_channel_metadata(
-    tmp_path: Path, example_data_dir: Path, example_channel_labels: tuple[str, ...]
+    tmp_path: Path,
+    example_bd_dataset: ExampleBDDataset,
+    example_channel_labels: tuple[str, ...],
 ):
     image = open_ome_zarr_container(
-        run_converter(tmp_path, example_data_dir)
+        run_converter(tmp_path, example_bd_dataset.tiff_dir)
     ).get_image()
 
     assert tuple(image.channel_labels) == example_channel_labels
@@ -145,23 +163,21 @@ def test_mixed_folder_raises(tmp_path: Path, mixed_tiff_dir: Path):
         fcf_s8_converter(tiff_folder_path=str(mixed_tiff_dir), zarr_dir=str(tmp_path))
 
 
-def test_converter_with_single_channel_tiffs(
-    tmp_path: Path, make_tiff: Callable[..., Path]
-):
+def test_single_channel_tiffs_raise(tmp_path: Path, make_tiff: Callable[..., Path]):
     tiff_dir = tmp_path / "tiffs"
     tiff_dir.mkdir()
     for name in ("a.tif", "b.tif"):
         make_tiff(f"tiffs/{name}", shape=(1, 20, 30))
 
-    image = open_ome_zarr_container(run_converter(tmp_path, tiff_dir)).get_image()
-
-    # 2 tiles of (20, 30) pixels in a 1 x 2 grid
-    assert image.shape == (1, 20, 60)
+    with pytest.raises(ValueError, match="only contains one channel"):
+        run_converter(tmp_path, tiff_dir)
 
 
-def test_zarr_name_from_folder_with_spaces(tmp_path: Path, example_data_dir: Path):
+def test_zarr_name_from_folder_with_spaces(
+    tmp_path: Path, example_bd_dataset: ExampleBDDataset
+):
     tiff_dir = tmp_path / "Demo recording"
-    shutil.copytree(example_data_dir, tiff_dir)
+    shutil.copytree(example_bd_dataset.tiff_dir, tiff_dir)
 
     zarr_url = run_converter(tmp_path, tiff_dir)
 
@@ -169,10 +185,14 @@ def test_zarr_name_from_folder_with_spaces(tmp_path: Path, example_data_dir: Pat
 
 
 def test_converter_writes_fcs_events_table(
-    tmp_path: Path, example_data_dir: Path, example_fcs_path: Path
+    tmp_path: Path, example_bd_dataset: ExampleBDDataset
 ):
     ome_zarr = open_ome_zarr_container(
-        run_converter(tmp_path, example_data_dir, fcs_file_path=str(example_fcs_path))
+        run_converter(
+            tmp_path,
+            example_bd_dataset.tiff_dir,
+            fcs_file_path=str(example_bd_dataset.fcs_path),
+        )
     )
 
     assert "fcs_events" in ome_zarr.list_tables()
@@ -198,13 +218,16 @@ def test_converter_writes_fcs_events_table(
     assert [str(i) for i in df.index] == [roi.name for roi in rois]
 
     # Raw values of event 1 in the full FCS export
-    assert df.loc[1, "Size (FSC)"] == 1179
-    assert df.loc[1, "SpectralEventWidth"] == 4675
-    assert df.loc[1, "Time"] == pytest.approx(0.41319016)
+    expected = example_bd_dataset.fcs_event_1
+    assert df.loc[1, "Size (FSC)"] == expected["Size (FSC)"]
+    assert df.loc[1, "SpectralEventWidth"] == expected["SpectralEventWidth"]
+    assert df.loc[1, "Time"] == pytest.approx(expected["Time"])
 
 
 def test_converter_without_fcs_writes_no_fcs_table(
-    tmp_path: Path, example_data_dir: Path
+    tmp_path: Path, example_bd_dataset: ExampleBDDataset
 ):
-    ome_zarr = open_ome_zarr_container(run_converter(tmp_path, example_data_dir))
+    ome_zarr = open_ome_zarr_container(
+        run_converter(tmp_path, example_bd_dataset.tiff_dir)
+    )
     assert "fcs_events" not in ome_zarr.list_tables()
