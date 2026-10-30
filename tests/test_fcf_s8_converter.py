@@ -85,16 +85,16 @@ def test_fov_rois_match_source_tiff_pages(
 def test_converter_writes_image_inside_fake_plate(
     tmp_path: Path, example_bd_dataset: ExampleBDDataset
 ):
-    example_data_dir = example_bd_dataset.tiff_dir
+    tiff_dir = example_bd_dataset.tiff_dir
     result = fcf_s8_converter(
-        tiff_folder_path=str(example_data_dir),
+        tiff_folder_path=str(tiff_dir),
         zarr_dir=str(tmp_path),
         fake_a_plate=True,
     )
     assert result is not None
     # The plate is named after the TIFF folder by default
     # The test also checks if the folder name was properly sanitized
-    plate_url = f"{sanitize_string(example_data_dir.name)}.ome.zarr"
+    plate_url = f"{sanitize_string(tiff_dir.name)}.ome.zarr"
     (image_update,) = result["image_list_updates"]
     assert image_update["zarr_url"] == str(tmp_path / plate_url / "A/01/0")
     assert image_update["attributes"] == {"plate": plate_url, "well": "A01"}
@@ -132,13 +132,13 @@ def test_converter_writes_roi_tables(
 def test_converter_writes_channel_metadata(
     tmp_path: Path,
     example_bd_dataset: ExampleBDDataset,
-    example_channel_labels: tuple[str, ...],
+    bd_channel_labels: tuple[str, ...],
 ):
     image = open_ome_zarr_container(
         run_converter(tmp_path, example_bd_dataset.tiff_dir)
     ).get_image()
 
-    assert tuple(image.channel_labels) == example_channel_labels
+    assert tuple(image.channel_labels) == bd_channel_labels
     data = image.get_as_numpy()
     for c, channel in enumerate(image.channels_meta.channels):
         window = channel.channel_visualisation

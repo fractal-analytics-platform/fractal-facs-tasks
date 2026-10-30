@@ -12,8 +12,8 @@ BD_A8_DIR = Path(__file__).parent / "example_data" / "BD_A8"
 
 # Paths used for fixtures for the integration tests.
 # Run only on S8 data for now because the OME-Zarr structure is the same.
-EXAMPLE_DATA_DIR = BD_S8_DIR / "Demo_data_S8_img_extractor"
-EXAMPLE_FCS_PATH = BD_S8_DIR / "Demo recording_10000.fcs"
+BD_S8_TIFF_DIR = BD_S8_DIR / "Demo_data_S8_img_extractor"
+BD_S8_FCS_PATH = BD_S8_DIR / "Demo recording_10000.fcs"
 
 
 @dataclass(frozen=True)
@@ -31,8 +31,8 @@ class ExampleBDDataset:
 EXAMPLE_BD_DATASETS = {
     # TIFFs from the standalone image extractor: one 3D (c, y, x) series per file
     "BD_S8": ExampleBDDataset(
-        tiff_dir=EXAMPLE_DATA_DIR,
-        fcs_path=EXAMPLE_FCS_PATH,
+        tiff_dir=BD_S8_TIFF_DIR,
+        fcs_path=BD_S8_FCS_PATH,
         mosaic_size=(146, 208),
         fcs_event_1={
             "Size (FSC)": 1179,
@@ -61,19 +61,19 @@ def example_bd_dataset(request: pytest.FixtureRequest) -> ExampleBDDataset:
 
 
 @pytest.fixture
-def example_data_dir() -> Path:
+def bd_s8_tiff_dir() -> Path:
     """S8 example recording, with TIFFs in subfolders as written by the instrument."""
-    return EXAMPLE_DATA_DIR
+    return BD_S8_TIFF_DIR
 
 
 @pytest.fixture
-def example_fcs_path() -> Path:
+def bd_s8_fcs_path() -> Path:
     """FCS file of the S8 example recording, reduced to the 4 imaged events."""
-    return EXAMPLE_FCS_PATH
+    return BD_S8_FCS_PATH
 
 
 @pytest.fixture
-def example_channel_labels() -> tuple[str, ...]:
+def bd_channel_labels() -> tuple[str, ...]:
     """Sanitized channel labels from the PageName tags of the example TIFFs.
 
     The S8 and A8 example TIFFs have the same channels. The raw tags are e.g.
@@ -93,7 +93,7 @@ def example_channel_labels() -> tuple[str, ...]:
 def mixed_tiff_dir(tmp_path: Path) -> Path:
     """Copy of the example data plus a single-page TIFF without metadata."""
     mixed_dir = tmp_path / "mixed_tiffs"
-    shutil.copytree(EXAMPLE_DATA_DIR, mixed_dir)
+    shutil.copytree(BD_S8_TIFF_DIR, mixed_dir)
     tifffile.imwrite(mixed_dir / "bare.tif", np.zeros((20, 30), dtype=np.uint8))
     return mixed_dir
 

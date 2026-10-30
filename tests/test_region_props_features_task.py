@@ -16,10 +16,10 @@ TABLE_NAME = "region_props_features"
 
 
 @pytest.fixture(params=[False, True], ids=["yx", "z_singleton"])
-def zarr_url(request: pytest.FixtureRequest, tmp_path: Path, example_data_dir: Path):
+def zarr_url(request: pytest.FixtureRequest, tmp_path: Path, bd_s8_tiff_dir: Path):
     """OME-Zarr from the S8 converter, segmented by the threshold segmentation."""
     result = fcf_s8_converter(
-        tiff_folder_path=str(example_data_dir),
+        tiff_folder_path=str(bd_s8_tiff_dir),
         zarr_dir=str(tmp_path),
         fake_a_plate=False,
         add_z_singleton=request.param,
@@ -30,7 +30,7 @@ def zarr_url(request: pytest.FixtureRequest, tmp_path: Path, example_data_dir: P
     return zarr_url
 
 
-def test_columns_named_by_channel(zarr_url: str, example_channel_labels: tuple):
+def test_columns_named_by_channel(zarr_url: str, bd_channel_labels: tuple):
     region_props_features_task(zarr_url=zarr_url, label_image_name=LABEL_NAME)
 
     df = open_ome_zarr_container(zarr_url).get_feature_table(TABLE_NAME).dataframe
@@ -38,14 +38,14 @@ def test_columns_named_by_channel(zarr_url: str, example_channel_labels: tuple):
     expected = {
         f"{prop}-{channel}"
         for prop in INTENSITY_PROPERTIES
-        for channel in example_channel_labels
+        for channel in bd_channel_labels
     }
     assert expected <= set(df.columns)
     # No leftover columns suffixed with the channel index
     assert not [col for col in df.columns if col.rsplit("-", 1)[-1].isdigit()]
 
 
-def test_features_match_image(zarr_url: str, example_channel_labels: tuple):
+def test_features_match_image(zarr_url: str, bd_channel_labels: tuple):
     """One row per object, with features computed on the image.
 
     Morphology features are in physical units, from the (y, x) pixel size.
@@ -72,7 +72,7 @@ def test_features_match_image(zarr_url: str, example_channel_labels: tuple):
         coords = np.argwhere(mask) * pixel_size
         variance = np.linalg.eigvalsh(np.cov(coords.T, bias=True)).max()
         assert row["axis_major_length"] == pytest.approx(4 * np.sqrt(variance))
-        for channel_img, channel in zip(image, example_channel_labels, strict=True):
+        for channel_img, channel in zip(image, bd_channel_labels, strict=True):
             pixels = channel_img[mask].astype(np.float64)
             assert row[f"mean_intensity-{channel}"] == pytest.approx(
                 pixels.mean(), rel=1e-5, abs=1e-9
