@@ -1,8 +1,9 @@
 """Write the small test FCS file from the full BD S8 FCS export.
 
 The full export (~17 MB, 10000 events x 418 parameters) is too big to commit.
-This keeps only the events matching the TIFFs in Demo_data_S8 and a few
-parameters. The TEXT metadata is not kept, flowio writes a minimal one.
+This keeps only the events matching the TIFFs in
+BD_S8/Demo_data_S8_img_extractor and a few parameters. The TEXT metadata is not kept,
+flowio writes a minimal one.
 The raw values are written as float32, so they are bit-identical to the source.
 
 Usage:

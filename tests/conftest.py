@@ -6,10 +6,11 @@ import numpy as np
 import pytest
 import tifffile
 
-EXAMPLE_DATA_DIR = Path(__file__).parent / "example_data" / "Demo_data_S8"
+BD_S8_DIR = Path(__file__).parent / "example_data" / "BD_S8"
+EXAMPLE_DATA_DIR = BD_S8_DIR / "Demo_data_S8_img_extractor"
 # First 4 events (matching the TIFFs) and 8 parameters of the full FCS export,
 # written by example_data/make_test_fcs.py
-EXAMPLE_FCS_PATH = Path(__file__).parent / "example_data" / "Demo recording_10000.fcs"
+EXAMPLE_FCS_PATH = BD_S8_DIR / "Demo recording_10000.fcs"
 
 
 @pytest.fixture
