@@ -26,6 +26,7 @@ def region_props_features_func(
     label: np.ndarray,
     roi: Roi,
     channel_labels: list[str],
+    pixel_size: tuple[float, float],
 ) -> dict:
     """Extract region properties features from a label image within a ROI.
 
@@ -62,6 +63,7 @@ def region_props_features_func(
             "solidity",
             *INTENSITY_PROPERTIES,
         ],
+        spacing=pixel_size,
     )
     # regionprops suffixes intensity features with the channel index,
     # replace it with the channel label
@@ -185,6 +187,7 @@ def region_props_features_task(
             label=label_data,
             roi=roi,
             channel_labels=image.channel_labels,
+            pixel_size=(image.pixel_size.y, image.pixel_size.x),
         )
         # Feature ExtractorIterator does not handle writing, so we collect
         # the tables and write them at the end
