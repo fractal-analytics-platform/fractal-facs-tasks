@@ -1,4 +1,4 @@
-"""Threshold segmentation of cells in the light-loss channel of BD S8 FOVs."""
+"""Threshold segmentation of cells in the light-loss channel of BD S8/A8 FOVs."""
 
 import logging
 from typing import Any

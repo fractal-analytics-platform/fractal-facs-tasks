@@ -75,9 +75,9 @@ def test_tile_slices_stay_in_bounds_without_overlap(add_z_singleton: bool):
 
 
 def test_from_paths_reads_tile_size_and_metadata(
-    example_data_dir: Path, example_channel_labels: tuple[str, ...]
+    bd_s8_tiff_dir: Path, bd_channel_labels: tuple[str, ...]
 ):
-    tif_paths = sorted(example_data_dir.rglob("*.tif*"))
+    tif_paths = sorted(bd_s8_tiff_dir.rglob("*.tif*"))
     layout = MosaicLayout.from_paths(tif_paths)
 
     # NOTE: this is hardcoding params from the example data.
@@ -85,7 +85,7 @@ def test_from_paths_reads_tile_size_and_metadata(
     assert layout.tile == (73, 104)
     assert layout.n_tiles == 4
     assert layout.n_channels == 6
-    assert layout.channel_labels == example_channel_labels
+    assert layout.channel_labels == bd_channel_labels
     # 60 µm / 104 px in x, y/x anisotropy of 1.2 from the resolution tags
     assert layout.pixel_size == pytest.approx((60 / 104 / 1.2, 60 / 104))
 
@@ -101,8 +101,8 @@ def test_from_paths_with_mixed_folder_raises(mixed_tiff_dir: Path):
         MosaicLayout.from_paths(tif_paths)
 
 
-def test_from_paths_uses_only_given_files(example_data_dir: Path):
-    tif_paths = sorted(example_data_dir.rglob("*.tif*"))
+def test_from_paths_uses_only_given_files(bd_s8_tiff_dir: Path):
+    tif_paths = sorted(bd_s8_tiff_dir.rglob("*.tif*"))
     layout = MosaicLayout.from_paths(tif_paths[:1])
 
     assert layout.n_tiles == 1

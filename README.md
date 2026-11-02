@@ -2,7 +2,7 @@
 
 Process UZH FCF images in OME-Zarr
 
-Proof of concept for converting S8 images to OME-Zarr & processing them with 
+Proof of concept for converting BD S8/A8 images to OME-Zarr & processing them with 
 Fractal tasks.
 
 Example data being processed:

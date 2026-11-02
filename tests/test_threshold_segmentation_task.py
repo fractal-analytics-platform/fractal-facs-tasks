@@ -5,7 +5,7 @@ import pytest
 from ngio import open_ome_zarr_container
 from skimage.draw import disk
 
-from fcf_ome_zarr.converters.fcf_s8_converter import fcf_s8_converter
+from fcf_ome_zarr.converters.fcf_bd_converter import fcf_bd_converter
 from fcf_ome_zarr.threshold_segmentation_task import (
     DEFAULT_CHANNEL,
     FOV_ROI_TABLE,
@@ -27,14 +27,14 @@ CELL = 0.1
 def zarr_url(
     request: pytest.FixtureRequest,
     tmp_path: Path,
-    example_data_dir: Path,
-    example_fcs_path: Path,
+    bd_s8_tiff_dir: Path,
+    bd_s8_fcs_path: Path,
 ):
-    """OME-Zarr produced by the S8 converter from the example data."""
-    result = fcf_s8_converter(
-        tiff_folder_path=str(example_data_dir),
+    """OME-Zarr produced by the BD converter from the example data."""
+    result = fcf_bd_converter(
+        tiff_folder_path=str(bd_s8_tiff_dir),
         zarr_dir=str(tmp_path),
-        fcs_file_path=str(example_fcs_path),
+        fcs_file_path=str(bd_s8_fcs_path),
         fake_a_plate=False,
         add_z_singleton=request.param,
     )
