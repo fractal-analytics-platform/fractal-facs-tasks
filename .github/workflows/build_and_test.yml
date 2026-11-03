@@ -17,7 +17,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-22.04, macos-latest]
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.13", "3.14", "3.15"]
     name: "Core, Python ${{  matrix.python-version }}, ${{  matrix.os }}"
     runs-on: ${{  matrix.os }}
     timeout-minutes: 10
@@ -42,7 +42,7 @@ jobs:
 
       - name: Test core library with pytest
         run: python -m pytest tests
-  
+
   deploy:
     name: Deploy
     needs: tests
