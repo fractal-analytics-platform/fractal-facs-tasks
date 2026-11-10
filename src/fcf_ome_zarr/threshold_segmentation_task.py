@@ -16,12 +16,10 @@ from skimage.filters import threshold_yen
 from skimage.measure import label
 from skimage.morphology import remove_small_objects
 
-from fcf_ome_zarr.constants import TABLE_BACKEND
+from fcf_ome_zarr.constants import EVENT_INDEX_KEY, FOV_ROI_TABLE, TABLE_BACKEND
 
 logger = logging.getLogger("threshold_segmentation_task")
 
-# Each FOV holds a single event, so segmentation always runs FOV by FOV
-FOV_ROI_TABLE = "FOV_ROI_table"
 DEFAULT_CHANNEL = ChannelSelectionModel(identifier="LightLoss_Imaging", mode="label")
 
 
@@ -124,6 +122,7 @@ def threshold_segmentation_task(
     iterator = iterator.by_yx()
     logger.info(f"Iterator created: {iterator=}")
 
+    # Each FOV holds a single event, so segmentation always runs FOV by FOV
     table = ome_zarr.get_generic_roi_table(name=FOV_ROI_TABLE)
     logger.info(f"ROI table retrieved: {table=}")
     iterator = iterator.product(table)
@@ -155,7 +154,7 @@ def threshold_segmentation_task(
     logger.info(f"label {label_name} successfully created at {zarr_url}")
 
     label_to_event = pd.DataFrame(
-        {"event_index": event_indices}, index=pd.Index(labels, name="label")
+        {EVENT_INDEX_KEY: event_indices}, index=pd.Index(labels, name="label")
     )
     ome_zarr.add_table(
         name=table_name,

@@ -15,7 +15,14 @@ from ngio.tables.v1._feature_table import FeatureTableMeta
 from pydantic import validate_call
 from zarr.storage import LocalStore
 
-from fcf_ome_zarr.constants import TABLE_BACKEND
+from fcf_ome_zarr.constants import (
+    EVENT_INDEX_KEY,
+    FCS_EVENTS_TABLE,
+    FOV_ROI_TABLE,
+    IMAGE_ROI_TABLE,
+    NGFF_VERSION,
+    TABLE_BACKEND,
+)
 from fcf_ome_zarr.converters.mosaic import MosaicLayout, pad_to_shape
 from fcf_ome_zarr.utils import sanitize_string
 
@@ -89,7 +96,7 @@ def fcf_bd_converter(
         plate = ngio.create_empty_plate(
             f"{zarr_dir}/{mosaic_url}",
             name=zarr_name,
-            ngff_version="0.5",
+            ngff_version=NGFF_VERSION,
             overwrite=overwrite,
         )
         image_path = plate.add_image(row="A", column=1, image_path="0")
@@ -132,7 +139,7 @@ def fcf_bd_converter(
         if add_z_singleton
         else (layout.n_channels, 512, 512),  # adjust as needed
         overwrite=overwrite,
-        ngff_version="0.5",
+        ngff_version=NGFF_VERSION,
     )
     ngio_image = ome_zarr_container.get_image()
     zarr_array = ngio_image.zarr_array
@@ -169,18 +176,18 @@ def fcf_bd_converter(
     # --- Create ROI table ---
     roi_table = RoiTable(rois=rois)
     ome_zarr_container.add_table(
-        "FOV_ROI_table", roi_table, overwrite=overwrite, backend=TABLE_BACKEND
+        FOV_ROI_TABLE, roi_table, overwrite=overwrite, backend=TABLE_BACKEND
     )
 
     # Genereate a ROI table that covers the full image
     image_roi_table = ngio_image.build_image_roi_table()
     ome_zarr_container.add_table(
-        "image_ROI_table", image_roi_table, overwrite=overwrite, backend=TABLE_BACKEND
+        IMAGE_ROI_TABLE, image_roi_table, overwrite=overwrite, backend=TABLE_BACKEND
     )
 
     if fcs_file_path is not None:
         ome_zarr_container.add_table(
-            "fcs_events",
+            FCS_EVENTS_TABLE,
             read_fcs_events(Path(fcs_file_path)),
             overwrite=overwrite,
             backend=TABLE_BACKEND,
@@ -205,8 +212,8 @@ def read_fcs_events(fcs_path: Path) -> FeatureTable:
     fcs = flowio.FlowData(fcs_path)
     events = fcs.as_array(preprocess=False).astype(np.float32)
     data = pl.DataFrame(events, schema=fcs.pnn_labels, orient="row")
-    data = data.with_columns(event_index=pl.Series(np.arange(len(data))))
-    return FeatureTable(data, meta=FeatureTableMeta(index_key="event_index"))
+    data = data.with_columns(pl.Series(EVENT_INDEX_KEY, np.arange(len(data))))
+    return FeatureTable(data, meta=FeatureTableMeta(index_key=EVENT_INDEX_KEY))
 
 
 if __name__ == "__main__":
