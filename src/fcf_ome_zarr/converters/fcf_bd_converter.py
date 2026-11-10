@@ -38,6 +38,9 @@ def fcf_bd_converter(
     zarr_name: Optional[str] = None,
     fake_a_plate: bool = True,
     add_z_singleton: bool = False,
+    use_sharding: bool = False,
+    target_chunk_size: int = 512,
+    target_shard_size: int = 2048,
     convert_first_x_tiffs: Optional[int] = None,
     overwrite: bool = True,
 ) -> dict | None:
@@ -77,6 +80,20 @@ def fcf_bd_converter(
             This is useful to use some of the tools (like the Fractal feature
             explorer) that require Z singleton dimensions.
             Defaults to False.
+        use_sharding: Whether to store the image in shards. If True, each chunk
+            holds a single mosaic tile and shards are about
+            `target_shard_size` pixels per side. If False, there is no sharding
+            and chunks are about `target_chunk_size` pixels per side. Chunks
+            and shards always hold all channels and a whole number of tiles.
+            Defaults to False.
+        target_chunk_size: Target size in pixels of the chunks along y and x,
+            used only without sharding. Rounded to the closest whole number of
+            tiles (at least one). This parameter is ignored if `use_sharding` is True.
+            Defaults to 512.
+        target_shard_size: Target size in pixels of the shards along y and x,
+            used only with sharding. Rounded to the closest whole number of
+            tiles (at least one). This parameter is ignored if `use_sharding` is False.
+            Defaults to 2048.
         convert_first_x_tiffs: If provided, only the first X TIFF files in the
             folder are converted. This is useful for testing with a smaller
             number of files. If None, all TIFF files in the folder are converted.
@@ -123,6 +140,18 @@ def fcf_bd_converter(
     )
     logging.info(f"Total image size: {layout.size.y} y x {layout.size.x} x")
 
+    # Chunks and shards hold all channels and a whole number of tiles
+    if use_sharding:
+        chunks_yx: tuple[int, int] = layout.tile
+        shards_yx = layout.closest_tile_multiple(target_shard_size)
+    else:
+        chunks_yx = layout.closest_tile_multiple(target_chunk_size)
+        shards_yx = None
+    z_dims = (1,) if add_z_singleton else ()
+    chunks = (layout.n_channels, *z_dims, *chunks_yx)
+    shards = (layout.n_channels, *z_dims, *shards_yx) if shards_yx else None
+    logging.info(f"Chunks: {chunks}, shards: {shards}")
+
     # Create OME-Zarr
     # TODO: consider more robust alternative to local store
     store = LocalStore(zarr_url)
@@ -135,9 +164,8 @@ def fcf_bd_converter(
         pixelsize=layout.pixel_size,
         channels_meta=list(layout.channel_labels),
         dtype="float32",
-        chunks=(layout.n_channels, 1, 512, 512)
-        if add_z_singleton
-        else (layout.n_channels, 512, 512),  # adjust as needed
+        chunks=chunks,
+        shards=shards,
         overwrite=overwrite,
         ngff_version=NGFF_VERSION,
     )

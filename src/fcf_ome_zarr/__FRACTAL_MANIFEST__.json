@@ -176,6 +176,24 @@
             "type": "boolean",
             "description": "Whether to add a singleton Z dimension to the OME-Zarr. This is useful to use some of the tools (like the Fractal feature explorer) that require Z singleton dimensions. Defaults to False."
           },
+          "use_sharding": {
+            "default": false,
+            "title": "Use Sharding",
+            "type": "boolean",
+            "description": "Whether to store the image in shards. If True, each chunk holds a single mosaic tile and shards are about `target_shard_size` pixels per side. If False, there is no sharding and chunks are about `target_chunk_size` pixels per side. Chunks and shards always hold all channels and a whole number of tiles. Defaults to False."
+          },
+          "target_chunk_size": {
+            "default": 512,
+            "title": "Target Chunk Size",
+            "type": "integer",
+            "description": "Target size in pixels of the chunks along y and x, used only without sharding. Rounded to the closest whole number of tiles (at least one). This parameter is ignored if `use_sharding` is True. Defaults to 512."
+          },
+          "target_shard_size": {
+            "default": 2048,
+            "title": "Target Shard Size",
+            "type": "integer",
+            "description": "Target size in pixels of the shards along y and x, used only with sharding. Rounded to the closest whole number of tiles (at least one). This parameter is ignored if `use_sharding` is False. Defaults to 2048."
+          },
           "convert_first_x_tiffs": {
             "anyOf": [
               {

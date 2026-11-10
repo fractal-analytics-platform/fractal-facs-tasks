@@ -47,6 +47,56 @@ def test_converter_writes_mosaic_image(
     assert image.pixel_size.x == pytest.approx(60 / 104)
 
 
+@pytest.fixture
+def large_tiff_dir(tmp_path: Path, make_tiff: Callable[..., Path]) -> Path:
+    """100 synthetic 200 x 300 px TIFFs with 2 channels.
+
+    They form a 12 x 9 tile mosaic of 2400 x 2700 px, large enough that the
+    chunks and shards in the tests are not clipped to the mosaic size.
+    """
+    tiff_dir = tmp_path / "large_tiffs"
+    tiff_dir.mkdir()
+    for i in range(100):
+        make_tiff(f"large_tiffs/{i:03d}.tif", shape=(2, 200, 300))
+    return tiff_dir
+
+
+def test_without_sharding_chunks_are_closest_whole_tiles(
+    tmp_path: Path, large_tiff_dir: Path
+):
+    zarr_url = run_converter(
+        tmp_path,
+        large_tiff_dir,
+        use_sharding=False,
+        target_chunk_size=1000,
+        target_shard_size=1200,
+    )
+    array = open_ome_zarr_container(zarr_url).get_image().zarr_array
+
+    # 1000 px is 5 x 3.3 tiles of 200 x 300 px, rounded to 5 x 3 tiles.
+    # All channels are in the same chunk. The shard target is ignored.
+    assert array.chunks == (2, 1000, 900)
+    assert array.shards is None
+
+
+def test_with_sharding_chunks_are_one_tile(tmp_path: Path, large_tiff_dir: Path):
+    zarr_url = run_converter(
+        tmp_path,
+        large_tiff_dir,
+        use_sharding=True,
+        target_chunk_size=1000,
+        target_shard_size=1200,
+        add_z_singleton=True,
+    )
+    array = open_ome_zarr_container(zarr_url).get_image().zarr_array
+
+    # Chunks are a single tile, whatever the chunk target.
+    # 1200 px is exactly 6 x 4 tiles of 200 x 300 px.
+    # All channels are in the same chunk and shard.
+    assert array.chunks == (2, 1, 200, 300)
+    assert array.shards == (2, 1, 1200, 1200)
+
+
 @pytest.mark.parametrize("add_z_singleton", [True, False])
 def test_fov_rois_match_source_tiff_pages(
     tmp_path: Path, example_bd_dataset: ExampleBDDataset, add_z_singleton: bool
