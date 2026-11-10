@@ -11,6 +11,8 @@ from ngio.transforms import ZoomTransform
 from pydantic import validate_call
 from skimage import measure
 
+from fcf_ome_zarr.constants import TABLE_BACKEND
+
 logger = logging.getLogger("region_props_features_task")
 
 INTENSITY_PROPERTIES = (
@@ -201,7 +203,12 @@ def region_props_features_task(
         table_data=feature_df, reference_label=label_image_name
     )
     # Save the DataFrame as a table in the OME-Zarr container
-    ome_zarr.add_table(name=output_table_name, table=feature_table, overwrite=overwrite)
+    ome_zarr.add_table(
+        name=output_table_name,
+        table=feature_table,
+        overwrite=overwrite,
+        backend=TABLE_BACKEND,
+    )
     logger.info(f"Feature table {output_table_name} added to OME-Zarr container.")
     return None
 

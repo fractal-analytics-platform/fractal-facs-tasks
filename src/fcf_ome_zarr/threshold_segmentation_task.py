@@ -16,6 +16,8 @@ from skimage.filters import threshold_yen
 from skimage.measure import label
 from skimage.morphology import remove_small_objects
 
+from fcf_ome_zarr.constants import TABLE_BACKEND
+
 logger = logging.getLogger("threshold_segmentation_task")
 
 # Each FOV holds a single event, so segmentation always runs FOV by FOV
@@ -159,6 +161,7 @@ def threshold_segmentation_task(
         name=table_name,
         table=FeatureTable(table_data=label_to_event, reference_label=label_name),
         overwrite=overwrite,
+        backend=TABLE_BACKEND,
     )
     logger.info(f"Table {table_name} successfully created at {zarr_url}")
     return None

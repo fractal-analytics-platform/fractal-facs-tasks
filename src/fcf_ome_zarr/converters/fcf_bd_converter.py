@@ -15,6 +15,7 @@ from ngio.tables.v1._feature_table import FeatureTableMeta
 from pydantic import validate_call
 from zarr.storage import LocalStore
 
+from fcf_ome_zarr.constants import TABLE_BACKEND
 from fcf_ome_zarr.converters.mosaic import MosaicLayout, pad_to_shape
 from fcf_ome_zarr.utils import sanitize_string
 
@@ -167,17 +168,22 @@ def fcf_bd_converter(
 
     # --- Create ROI table ---
     roi_table = RoiTable(rois=rois)
-    ome_zarr_container.add_table("FOV_ROI_table", roi_table, overwrite=overwrite)
+    ome_zarr_container.add_table(
+        "FOV_ROI_table", roi_table, overwrite=overwrite, backend=TABLE_BACKEND
+    )
 
     # Genereate a ROI table that covers the full image
     image_roi_table = ngio_image.build_image_roi_table()
     ome_zarr_container.add_table(
-        "image_ROI_table", image_roi_table, overwrite=overwrite
+        "image_ROI_table", image_roi_table, overwrite=overwrite, backend=TABLE_BACKEND
     )
 
     if fcs_file_path is not None:
         ome_zarr_container.add_table(
-            "fcs_events", read_fcs_events(Path(fcs_file_path)), overwrite=overwrite
+            "fcs_events",
+            read_fcs_events(Path(fcs_file_path)),
+            overwrite=overwrite,
+            backend=TABLE_BACKEND,
         )
 
     ngio_image.consolidate(mode="auto")
