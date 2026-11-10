@@ -98,6 +98,16 @@ class MosaicLayout:
             pixel_size=pixel_size.pop(),
         )
 
+    def closest_tile_multiple(self, target: int) -> tuple[int, int]:
+        """(y, x) size closest to `target` pixels per axis, in whole tiles.
+
+        Each axis is rounded to the nearest number of tiles, and is at least one tile.
+        """
+        return (
+            max(1, round(target / self.tile.y)) * self.tile.y,
+            max(1, round(target / self.tile.x)) * self.tile.x,
+        )
+
     def _get_tile_origin(self, row: int, col: int) -> tuple[int, int]:
         """Get (y, x) origin of a tile at given row and col indexer"""
         return row * self.tile.y, col * self.tile.x

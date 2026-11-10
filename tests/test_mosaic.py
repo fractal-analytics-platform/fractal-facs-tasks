@@ -51,6 +51,24 @@ def test_grid_fits_all_tiles_without_empty_row(tile: tuple[int, int]):
         assert (layout.n_rows - 1) * layout.n_cols < n_tiles, n_tiles
 
 
+@pytest.mark.parametrize(
+    "tile, target, expected",
+    [
+        # S8 tile: 512 / 41 = 12.5 rounds to 12, 512 / 104 = 4.9 rounds to 5
+        ((41, 104), 512, (492, 520)),
+        ((73, 104), 2048, (2044, 2080)),
+        # Exact multiples are kept
+        ((64, 128), 512, (512, 512)),
+        # Tiles larger than the target still give one tile
+        ((1000, 600), 512, (1000, 600)),
+    ],
+)
+def test_closest_tile_multiple(
+    tile: tuple[int, int], target: int, expected: tuple[int, int]
+):
+    assert make_layout(n_tiles=1, tile=tile).closest_tile_multiple(target) == expected
+
+
 def test_size_is_grid_shape_times_tile_size():
     layout = make_layout(n_tiles=7, tile=(10, 20))
     assert layout.size == (layout.n_rows * 10, layout.n_cols * 20)

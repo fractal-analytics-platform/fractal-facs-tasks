@@ -15,6 +15,14 @@ from ngio.tables.v1._feature_table import FeatureTableMeta
 from pydantic import validate_call
 from zarr.storage import LocalStore
 
+from fcf_ome_zarr.constants import (
+    EVENT_INDEX_KEY,
+    FCS_EVENTS_TABLE,
+    FOV_ROI_TABLE,
+    IMAGE_ROI_TABLE,
+    NGFF_VERSION,
+    TABLE_BACKEND,
+)
 from fcf_ome_zarr.converters.mosaic import MosaicLayout, pad_to_shape
 from fcf_ome_zarr.utils import sanitize_string
 
@@ -30,6 +38,9 @@ def fcf_bd_converter(
     zarr_name: Optional[str] = None,
     fake_a_plate: bool = True,
     add_z_singleton: bool = False,
+    use_sharding: bool = False,
+    target_chunk_size: int = 512,
+    target_shard_size: int = 2048,
     convert_first_x_tiffs: Optional[int] = None,
     overwrite: bool = True,
 ) -> dict | None:
@@ -69,6 +80,20 @@ def fcf_bd_converter(
             This is useful to use some of the tools (like the Fractal feature
             explorer) that require Z singleton dimensions.
             Defaults to False.
+        use_sharding: Whether to store the image in shards. If True, each chunk
+            holds a single mosaic tile and shards are about
+            `target_shard_size` pixels per side. If False, there is no sharding
+            and chunks are about `target_chunk_size` pixels per side. Chunks
+            and shards always hold all channels and a whole number of tiles.
+            Defaults to False.
+        target_chunk_size: Target size in pixels of the chunks along y and x,
+            used only without sharding. Rounded to the closest whole number of
+            tiles (at least one). This parameter is ignored if `use_sharding` is True.
+            Defaults to 512.
+        target_shard_size: Target size in pixels of the shards along y and x,
+            used only with sharding. Rounded to the closest whole number of
+            tiles (at least one). This parameter is ignored if `use_sharding` is False.
+            Defaults to 2048.
         convert_first_x_tiffs: If provided, only the first X TIFF files in the
             folder are converted. This is useful for testing with a smaller
             number of files. If None, all TIFF files in the folder are converted.
@@ -88,7 +113,7 @@ def fcf_bd_converter(
         plate = ngio.create_empty_plate(
             f"{zarr_dir}/{mosaic_url}",
             name=zarr_name,
-            ngff_version="0.5",
+            ngff_version=NGFF_VERSION,
             overwrite=overwrite,
         )
         image_path = plate.add_image(row="A", column=1, image_path="0")
@@ -115,6 +140,18 @@ def fcf_bd_converter(
     )
     logging.info(f"Total image size: {layout.size.y} y x {layout.size.x} x")
 
+    # Chunks and shards hold all channels and a whole number of tiles
+    if use_sharding:
+        chunks_yx: tuple[int, int] = layout.tile
+        shards_yx = layout.closest_tile_multiple(target_shard_size)
+    else:
+        chunks_yx = layout.closest_tile_multiple(target_chunk_size)
+        shards_yx = None
+    z_dims = (1,) if add_z_singleton else ()
+    chunks = (layout.n_channels, *z_dims, *chunks_yx)
+    shards = (layout.n_channels, *z_dims, *shards_yx) if shards_yx else None
+    logging.info(f"Chunks: {chunks}, shards: {shards}")
+
     # Create OME-Zarr
     # TODO: consider more robust alternative to local store
     store = LocalStore(zarr_url)
@@ -127,11 +164,10 @@ def fcf_bd_converter(
         pixelsize=layout.pixel_size,
         channels_meta=list(layout.channel_labels),
         dtype="float32",
-        chunks=(layout.n_channels, 1, 512, 512)
-        if add_z_singleton
-        else (layout.n_channels, 512, 512),  # adjust as needed
+        chunks=chunks,
+        shards=shards,
         overwrite=overwrite,
-        ngff_version="0.5",
+        ngff_version=NGFF_VERSION,
     )
     ngio_image = ome_zarr_container.get_image()
     zarr_array = ngio_image.zarr_array
@@ -167,17 +203,22 @@ def fcf_bd_converter(
 
     # --- Create ROI table ---
     roi_table = RoiTable(rois=rois)
-    ome_zarr_container.add_table("FOV_ROI_table", roi_table, overwrite=overwrite)
+    ome_zarr_container.add_table(
+        FOV_ROI_TABLE, roi_table, overwrite=overwrite, backend=TABLE_BACKEND
+    )
 
     # Genereate a ROI table that covers the full image
     image_roi_table = ngio_image.build_image_roi_table()
     ome_zarr_container.add_table(
-        "image_ROI_table", image_roi_table, overwrite=overwrite
+        IMAGE_ROI_TABLE, image_roi_table, overwrite=overwrite, backend=TABLE_BACKEND
     )
 
     if fcs_file_path is not None:
         ome_zarr_container.add_table(
-            "fcs_events", read_fcs_events(Path(fcs_file_path)), overwrite=overwrite
+            FCS_EVENTS_TABLE,
+            read_fcs_events(Path(fcs_file_path)),
+            overwrite=overwrite,
+            backend=TABLE_BACKEND,
         )
 
     ngio_image.consolidate(mode="auto")
@@ -199,8 +240,8 @@ def read_fcs_events(fcs_path: Path) -> FeatureTable:
     fcs = flowio.FlowData(fcs_path)
     events = fcs.as_array(preprocess=False).astype(np.float32)
     data = pl.DataFrame(events, schema=fcs.pnn_labels, orient="row")
-    data = data.with_columns(event_index=pl.Series(np.arange(len(data))))
-    return FeatureTable(data, meta=FeatureTableMeta(index_key="event_index"))
+    data = data.with_columns(pl.Series(EVENT_INDEX_KEY, np.arange(len(data))))
+    return FeatureTable(data, meta=FeatureTableMeta(index_key=EVENT_INDEX_KEY))
 
 
 if __name__ == "__main__":
