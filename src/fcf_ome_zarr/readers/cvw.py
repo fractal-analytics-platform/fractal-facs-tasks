@@ -219,51 +219,49 @@ class CvwFile:
         samples = self._data[offset:sample_end].view(SAMPLE_DTYPE)
         return samples.reshape(-1, self.n_columns)
 
+    def read_image(self, i: int) -> np.ndarray:
+        """Reconstruct the image of event `i` from its raw waveform.
+
+        Args:
+            i: Event index, i.e. the position of the record in the file.
+
+        Returns:
+            `(6, J, IMAGE_WIDTH)` float32 image, channels in `IMAGE_CHANNEL_KEYS`
+            order.
+        """
+        waveform = self.raw_waveform(i)[:, self.channel_columns].astype(np.float64)
+
+        # Sliding-window FFT: (J, 6, WINDOW_SAMPLES) windows, rectangular window
+        windows = np.lib.stride_tricks.sliding_window_view(
+            waveform, WINDOW_SAMPLES, axis=0
+        )[::WINDOW_HOP]
+        bins = np.arange(FFT_BIN_START, FFT_BIN_STOP)
+        spectra = np.fft.rfft(windows, axis=-1)[..., bins]
+        spectra = np.moveaxis(spectra, 0, 1)  # (6, J, IMAGE_WIDTH)
+
+        # Undo the phase advance of each window relative to the first one
+        row = np.arange(spectra.shape[1])[:, None]
+        spectra *= np.exp(-2j * np.pi * bins * WINDOW_HOP * row / WINDOW_SAMPLES)
+
+        # Phase alignment on the first row of the phase channel
+        phase_idx = IMAGE_CHANNEL_KEYS.index(PHASE_CHANNEL_KEY)
+        gain = spectra[phase_idx, 0] / self.ref_phasors[bins]
+        phase = np.angle(np.sum(1 / gain))
+
+        calibrated = spectra * np.exp(1j * phase) / INTENSITY_SCALE
+        calibrated /= self.intrinsic_phasors[:, None, :]
+
+        if self.compensation_matrix is not None:
+            fluo = [IMAGE_CHANNEL_KEYS.index(k) for k in FLUORESCENCE_CHANNEL_KEYS]
+            calibrated[fluo] = np.einsum(
+                "ab,bjw->ajw", self.compensation_matrix, calibrated[fluo]
+            )
+
+        image = np.real(calibrated / self.lifetime_phasors[:, None, :])
+        return image.astype(np.float32)
+
 
 def _to_complex(values: list[float]) -> np.ndarray:
     """Convert interleaved (real, imaginary) values to a complex array."""
     a = np.asarray(values, dtype=np.float64)
     return a[0::2] + 1j * a[1::2]
-
-
-def reconstruct_event(cvw: CvwFile, i: int) -> np.ndarray:
-    """Reconstruct the image of event `i` from its raw waveform.
-
-    Args:
-        cvw: Open `.cvw` file.
-        i: Event index, i.e. the position of the record in the file.
-
-    Returns:
-        `(6, J, IMAGE_WIDTH)` float32 image, channels in `IMAGE_CHANNEL_KEYS`
-        order.
-    """
-    waveform = cvw.raw_waveform(i)[:, cvw.channel_columns].astype(np.float64)
-
-    # Sliding-window FFT: (J, 6, WINDOW_SAMPLES) windows, rectangular window
-    windows = np.lib.stride_tricks.sliding_window_view(
-        waveform, WINDOW_SAMPLES, axis=0
-    )[::WINDOW_HOP]
-    bins = np.arange(FFT_BIN_START, FFT_BIN_STOP)
-    spectra = np.fft.rfft(windows, axis=-1)[..., bins]
-    spectra = np.moveaxis(spectra, 0, 1)  # (6, J, IMAGE_WIDTH)
-
-    # Undo the phase advance of each window relative to the first one
-    row = np.arange(spectra.shape[1])[:, None]
-    spectra *= np.exp(-2j * np.pi * bins * WINDOW_HOP * row / WINDOW_SAMPLES)
-
-    # Phase alignment on the first row of the phase channel
-    phase_idx = IMAGE_CHANNEL_KEYS.index(PHASE_CHANNEL_KEY)
-    gain = spectra[phase_idx, 0] / cvw.ref_phasors[bins]
-    phase = np.angle(np.sum(1 / gain))
-
-    calibrated = spectra * np.exp(1j * phase) / INTENSITY_SCALE
-    calibrated /= cvw.intrinsic_phasors[:, None, :]
-
-    if cvw.compensation_matrix is not None:
-        fluo = [IMAGE_CHANNEL_KEYS.index(k) for k in FLUORESCENCE_CHANNEL_KEYS]
-        calibrated[fluo] = np.einsum(
-            "ab,bjw->ajw", cvw.compensation_matrix, calibrated[fluo]
-        )
-
-    image = np.real(calibrated / cvw.lifetime_phasors[:, None, :])
-    return image.astype(np.float32)
