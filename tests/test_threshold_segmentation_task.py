@@ -32,7 +32,7 @@ def zarr_url(
 ):
     """OME-Zarr produced by the BD converter from the example data."""
     result = fcf_bd_converter(
-        tiff_folder_path=str(bd_s8_tiff_dir),
+        input_path=str(bd_s8_tiff_dir),
         zarr_dir=str(tmp_path),
         fcs_file_path=str(bd_s8_fcs_path),
         fake_a_plate=False,

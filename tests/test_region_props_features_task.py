@@ -19,7 +19,7 @@ TABLE_NAME = "region_props_features"
 def zarr_url(request: pytest.FixtureRequest, tmp_path: Path, bd_s8_tiff_dir: Path):
     """OME-Zarr from the BD converter, segmented by the threshold segmentation."""
     result = fcf_bd_converter(
-        tiff_folder_path=str(bd_s8_tiff_dir),
+        input_path=str(bd_s8_tiff_dir),
         zarr_dir=str(tmp_path),
         fake_a_plate=False,
         add_z_singleton=request.param,
