@@ -1,7 +1,10 @@
 """Converter for the BD S8 and A8 cell sorter imaging data at UZH FCF"""
 
+import itertools
 import json
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +17,7 @@ from ngio import Roi
 from ngio.tables import FeatureTable, RoiTable
 from ngio.tables.v1._feature_table import FeatureTableMeta
 from pydantic import validate_call
+from zarr import Array
 from zarr.storage import LocalStore
 
 from fcf_ome_zarr.constants import (
@@ -26,8 +30,14 @@ from fcf_ome_zarr.constants import (
     TABLE_BACKEND,
     UINT16_MAX_INTENSITY,
 )
-from fcf_ome_zarr.converters.mosaic import MosaicLayout, pad_to_shape
+from fcf_ome_zarr.converters.mosaic import MosaicLayout, PixelSize, TileSize
+from fcf_ome_zarr.readers.cvw import IMAGE_WIDTH, CvwFile
 from fcf_ome_zarr.utils import sanitize_string
+
+# The `.cvw` file has no usable pixel size. Use the one of the vendor TIFF exports:
+# 60 µm over the image width in x (see `_get_pixel_size`), and a y/x ratio of 5/6
+# from their resolution tags.
+CVW_PIXEL_SIZE = PixelSize(y=60 / IMAGE_WIDTH * 5 / 6, x=60 / IMAGE_WIDTH)
 
 
 @validate_call
@@ -36,7 +46,7 @@ def fcf_bd_converter(
     # Fractal parameters
     zarr_dir: str,
     # Input parameters
-    tiff_folder_path: str,
+    input_path: str,
     fcs_file_path: Optional[str] = None,
     zarr_name: Optional[str] = None,
     fake_a_plate: bool = True,
@@ -45,26 +55,28 @@ def fcf_bd_converter(
     convert_to_uint16: bool = False,
     target_chunk_size: int = 512,
     target_shard_size: int = 2048,
-    convert_first_x_tiffs: Optional[int] = None,
     overwrite: bool = True,
 ) -> dict | None:
-    """Convert BD S8 or A8 TIFF files into a single mosaic OME-Zarr image.
+    """Convert BD S8 or A8 images into a single mosaic OME-Zarr image.
 
-    Supports TIFFs extracted with the standalone BD image extractor or with
-    the FlowJo plugin.
+    The images are read either from a folder of TIFF files, extracted with the
+    standalone BD image extractor or with the FlowJo plugin, or reconstructed
+    directly from the raw waveforms of a `.cvw` file.
 
-    Each TIFF is placed in its own tile of the mosaic and recorded as a ROI in
-    the "FOV_ROI_table". Channel labels are read from the TIFF PageName tags,
-    with special characters (e.g. whitespace, "/", parentheses) replaced by
-    underscores. If an FCS file is given, its raw event data is saved as the
-    "fcs_events" feature table.
+    Each image is placed in its own tile of the mosaic and recorded as a ROI in
+    the "FOV_ROI_table". Channel labels are read from the TIFF PageName tags or
+    from the `.cvw` metadata, with special characters (e.g. whitespace, "/",
+    parentheses) replaced by underscores. If an FCS file is given, its raw
+    event data is saved as the "fcs_events" feature table.
 
     Args:
         zarr_dir: path of the directory where the new OME-Zarrs will be
             created.
             (standard argument for Fractal tasks, managed by Fractal server).
-        tiff_folder_path: Path to the folder containing the TIFF files of the
-            BD S8 or A8 FACS to be converted.
+        input_path: Path to the BD S8 or A8 recording to convert. Either a
+            folder containing the exported TIFF files, or a `.cvw` waveform
+            file. With a `.cvw` file, every event is converted and the pixel
+            size is the one of the vendor TIFF exports.
         fcs_file_path: Path to the FCS file of the same recording. If provided,
             all its events are saved as the "fcs_events" feature table, with
             the raw values of all parameters and an "event_index" column
@@ -77,9 +89,9 @@ def fcf_bd_converter(
             values are the unchanged strings.
         zarr_name: Name of the output OME-Zarr, without the ".ome.zarr"
             extension. Used for the plate if `fake_a_plate` is True, otherwise
-            for the image. If None, the name of the TIFF folder is used, with
-            special characters (e.g. whitespace, "#", parentheses) replaced
-            by underscores.
+            for the image. If None, the name of the TIFF folder or of the
+            `.cvw` file (without extension) is used, with special characters
+            (e.g. whitespace, "#", parentheses) replaced by underscores.
         fake_a_plate: Whether to create a fake plate structure with a single
             well "A01" containing the mosaic image. This is useful to use some
             tools that need plates (e.g. Fractal feature explorer).
@@ -105,17 +117,15 @@ def fcf_bd_converter(
             used only with sharding. Rounded to the closest whole number of
             tiles (at least one). This parameter is ignored if `use_sharding` is False.
             Defaults to 2048.
-        convert_first_x_tiffs: If provided, only the first X TIFF files in the
-            folder are converted. This is useful for testing with a smaller
-            number of files. If None, all TIFF files in the folder are converted.
         overwrite (bool): Whether to overwrite an existing OME-Zarr image (and
             fake plate, if `fake_a_plate` is True). Defaults to True.
     """
-    logging.info(f"Processing {tiff_folder_path=}")
-    tiff_folder = Path(tiff_folder_path)
+    logging.info(f"Processing {input_path=}")
+    source = _open_source(Path(input_path))
+    layout = source.layout
 
     if zarr_name is None:
-        zarr_name = sanitize_string(tiff_folder.name)
+        zarr_name = sanitize_string(source.name)
     # Either the fake plate or the image, depending on fake_a_plate
     mosaic_url = f"{zarr_name}.ome.zarr"
     # Image list attributes, only set for the fake plate
@@ -133,17 +143,6 @@ def fcf_bd_converter(
 
     else:
         zarr_url = Path(f"{zarr_dir}/{mosaic_url}")
-
-    # Convert the TIFFs to a mosaic OME-Zarr
-    # Calcualte the mosaic layout parameters and extract image metadata
-    # TIFF images are in subdirs containing up to 10000 images each, but
-    # their ID is unique across the whole folder.
-    if convert_first_x_tiffs is not None:
-        tif_paths = sorted(tiff_folder.rglob("*.tif*"))[:convert_first_x_tiffs]
-    else:
-        tif_paths = sorted(tiff_folder.rglob("*.tif*"))
-
-    layout = MosaicLayout.from_paths(tif_paths)
 
     logging.info(
         f"Grid layout: {layout.n_rows} rows x {layout.n_cols} cols = "
@@ -181,39 +180,15 @@ def fcf_bd_converter(
         ngff_version=NGFF_VERSION,
     )
     ngio_image = ome_zarr_container.get_image()
-    zarr_array = ngio_image.zarr_array
 
-    rois = []
-
-    # Loop over TIFFs & place them inside the mosaic
-    for i, tif_path in enumerate(tif_paths):
-        row, col = divmod(i, layout.n_cols)
-        tile_slice = layout.get_tile_slice(
-            row=row, col=col, add_z_singleton=add_z_singleton
-        )
-
-        with tifffile.TiffFile(tif_path) as tif:
-            # Load all pages explicitly
-            img = tif.asarray(key=slice(None)).astype(np.float32)
-            if img.ndim == 2:
-                raise ValueError(f"TIFF image {tif_path} only contains one channel")
-
-        if convert_to_uint16:
-            img = float_to_uint16(img)
-
-        # Place padded image into the mosaic tile
-        padded = pad_to_shape(img, target_shape=layout.tile, dtype=img.dtype)
-        zarr_array[tile_slice] = padded
-
-        # Calculate roi slices
-        roi_slices = layout.get_roi_slices(row=row, col=col, img_shape=img.shape[-2:])
-        rois.append(
-            Roi(
-                name=str(i),  # TODO: find out how to match this with the spectra
-                slices=roi_slices,
-                space="world",
-            )
-        )
+    # Write whole chunks (or shards) at once, so each is written only once
+    rois = _write_mosaic(
+        zarr_array=ngio_image.zarr_array,
+        source=source,
+        block_size=shards_yx or chunks_yx,
+        add_z_singleton=add_z_singleton,
+        convert_to_uint16=convert_to_uint16,
+    )
 
     # --- Create ROI table ---
     roi_table = RoiTable(rois=rois)
@@ -250,6 +225,125 @@ def float_to_uint16(img: np.ndarray) -> np.ndarray:
     max_uint16 = np.iinfo(np.uint16).max
     scaled = np.clip(img, 0, UINT16_MAX_INTENSITY) * (max_uint16 / UINT16_MAX_INTENSITY)
     return np.round(scaled).astype(np.uint16)
+
+
+@dataclass(frozen=True)
+class MosaicSource:
+    """Images to place in the mosaic, one per tile.
+
+    Attributes:
+        name: Default name of the output OME-Zarr, before sanitizing.
+        layout: Mosaic layout, with one tile per image.
+        read_image: Returns the (c, y, x) float32 image of tile `i`.
+    """
+
+    name: str
+    layout: MosaicLayout
+    read_image: Callable[[int], np.ndarray]
+
+
+def _open_source(input_path: Path) -> MosaicSource:
+    """Pick the TIFF folder or the `.cvw` route, depending on the input path."""
+    if input_path.is_dir():
+        return _open_tiff_folder(input_path)
+    if input_path.suffix == ".cvw" and input_path.is_file():
+        return _open_cvw_file(input_path)
+    raise ValueError(
+        f"Input path {input_path} is neither a folder of TIFF files nor a .cvw file"
+    )
+
+
+def _open_tiff_folder(tiff_folder: Path) -> MosaicSource:
+    """Images from a folder of TIFF files, one tile per file in sorted order.
+
+    TIFF images are in subdirs containing up to 10000 images each, but their ID is
+    unique across the whole folder.
+    """
+    tif_paths = sorted(tiff_folder.rglob("*.tif*"))
+
+    def read_image(i: int) -> np.ndarray:
+        with tifffile.TiffFile(tif_paths[i]) as tif:
+            # Load all pages explicitly
+            img = tif.asarray(key=slice(None)).astype(np.float32)
+        if img.ndim == 2:
+            raise ValueError(f"TIFF image {tif_paths[i]} only contains one channel")
+        return img
+
+    return MosaicSource(
+        name=tiff_folder.name,
+        layout=MosaicLayout.from_paths(tif_paths),
+        read_image=read_image,
+    )
+
+
+def _open_cvw_file(cvw_path: Path) -> MosaicSource:
+    """Images reconstructed from a `.cvw` file, one tile per event."""
+    cvw = CvwFile(cvw_path)
+    layout = MosaicLayout(
+        # Image sizes come from the file index, without reconstructing any image
+        tile=TileSize(y=int(cvw.n_rows.max()), x=IMAGE_WIDTH),
+        pixel_size=CVW_PIXEL_SIZE,
+        n_tiles=cvw.n_events,
+        channel_labels=tuple(sanitize_string(name) for name in cvw.channel_names),
+    )
+    return MosaicSource(name=cvw_path.stem, layout=layout, read_image=cvw.read_image)
+
+
+def _write_mosaic(
+    zarr_array: Array,
+    source: MosaicSource,
+    block_size: tuple[int, int],
+    add_z_singleton: bool,
+    convert_to_uint16: bool,
+) -> list[Roi]:
+    """Fill the mosaic block by block and return one ROI per tile, in tile order.
+
+    Each block of whole tiles is assembled in memory, zero-padded, and written
+    with a single assignment, so each chunk (or shard) is written only once.
+
+    Args:
+        zarr_array: Mosaic array, (c, y, x) or (c, z, y, x) with a singleton z.
+        source: Images to place in the mosaic.
+        block_size: (y, x) block size in pixels, a whole number of tiles.
+        add_z_singleton: Whether the array has a singleton z axis.
+        convert_to_uint16: Whether to convert each block with `float_to_uint16`
+            before writing it.
+    """
+    layout = source.layout
+    tile = layout.tile
+    block_rows, block_cols = block_size[0] // tile.y, block_size[1] // tile.x
+    rois: list[Roi] = []
+    for row0, col0 in itertools.product(
+        range(0, layout.n_rows, block_rows), range(0, layout.n_cols, block_cols)
+    ):
+        rows = range(row0, min(row0 + block_rows, layout.n_rows))
+        cols = range(col0, min(col0 + block_cols, layout.n_cols))
+        block = np.zeros(
+            (layout.n_channels, len(rows) * tile.y, len(cols) * tile.x),
+            dtype=np.float32,
+        )
+        for row, col in itertools.product(rows, cols):
+            i = row * layout.n_cols + col
+            if i >= layout.n_tiles:
+                continue
+            img = source.read_image(i)
+            y0, x0 = (row - row0) * tile.y, (col - col0) * tile.x
+            block[:, y0 : y0 + img.shape[1], x0 : x0 + img.shape[2]] = img
+            roi_slices = layout.get_roi_slices(
+                row=row, col=col, img_shape=img.shape[-2:]
+            )
+            rois.append(Roi(name=str(i), slices=roi_slices, space="world"))
+
+        ys = slice(row0 * tile.y, row0 * tile.y + block.shape[1])
+        xs = slice(col0 * tile.x, col0 * tile.x + block.shape[2])
+        if convert_to_uint16:
+            block = float_to_uint16(block)
+        if add_z_singleton:
+            zarr_array[:, 0, ys, xs] = block
+        else:
+            zarr_array[:, ys, xs] = block
+
+    return sorted(rois, key=lambda roi: int(roi.name))
 
 
 def read_fcs_events(fcs_path: Path) -> FeatureTable:
