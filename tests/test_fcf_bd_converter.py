@@ -1,12 +1,15 @@
+import json
 import shutil
 from collections.abc import Callable
 from pathlib import Path
 
+import flowio
 import numpy as np
 import pytest
 import tifffile
 from ngio import open_ome_zarr_container, open_ome_zarr_plate
 
+from fcf_ome_zarr.constants import FCS_METADATA_FILE
 from fcf_ome_zarr.converters.fcf_bd_converter import fcf_bd_converter
 from fcf_ome_zarr.utils import sanitize_string
 from tests.conftest import ExampleBDDataset
@@ -272,6 +275,19 @@ def test_converter_writes_fcs_events_table(
     assert df.loc[1, "Size (FSC)"] == expected["Size (FSC)"]
     assert df.loc[1, "SpectralEventWidth"] == expected["SpectralEventWidth"]
     assert df.loc[1, "Time"] == pytest.approx(expected["Time"])
+
+
+def test_converter_writes_fcs_metadata(
+    tmp_path: Path, example_bd_dataset: ExampleBDDataset
+):
+    fcs_path = example_bd_dataset.fcs_path
+    zarr_url = run_converter(
+        tmp_path, example_bd_dataset.tiff_dir, fcs_file_path=str(fcs_path)
+    )
+
+    # All TEXT keywords, unchanged, next to the image zarr.json
+    metadata = json.loads((zarr_url / FCS_METADATA_FILE).read_text())
+    assert metadata == {"fcs_text": flowio.FlowData(fcs_path, only_text=True).text}
 
 
 def test_converter_without_fcs_writes_no_fcs_table(

@@ -1,5 +1,6 @@
 """Converter for the BD S8 and A8 cell sorter imaging data at UZH FCF"""
 
+import json
 import logging
 from pathlib import Path
 from typing import Optional
@@ -18,6 +19,7 @@ from zarr.storage import LocalStore
 from fcf_ome_zarr.constants import (
     EVENT_INDEX_KEY,
     FCS_EVENTS_TABLE,
+    FCS_METADATA_FILE,
     FOV_ROI_TABLE,
     IMAGE_ROI_TABLE,
     NGFF_VERSION,
@@ -67,6 +69,10 @@ def fcf_bd_converter(
             matching the names of the ROIs in "FOV_ROI_table". Values are
             stored as float32, so integer parameters show up as meaningless
             floats until reinterpreted (e.g. with `.view(np.uint32)`).
+            All its TEXT keywords are saved under "fcs_text" in a
+            "fcs_metadata.json" file next to the image "zarr.json". Keywords are
+            lowercased and without the leading "$" (as read by flowio);
+            values are the unchanged strings.
         zarr_name: Name of the output OME-Zarr, without the ".ome.zarr"
             extension. Used for the plate if `fake_a_plate` is True, otherwise
             for the image. If None, the name of the TIFF folder is used, with
@@ -220,6 +226,7 @@ def fcf_bd_converter(
             overwrite=overwrite,
             backend=TABLE_BACKEND,
         )
+        write_fcs_metadata(Path(fcs_file_path), zarr_url / FCS_METADATA_FILE)
 
     ngio_image.consolidate(mode="auto")
     # Set contrast limits for viewers
@@ -242,6 +249,17 @@ def read_fcs_events(fcs_path: Path) -> FeatureTable:
     data = pl.DataFrame(events, schema=fcs.pnn_labels, orient="row")
     data = data.with_columns(pl.Series(EVENT_INDEX_KEY, np.arange(len(data))))
     return FeatureTable(data, meta=FeatureTableMeta(index_key=EVENT_INDEX_KEY))
+
+
+def write_fcs_metadata(fcs_path: Path, metadata_path: Path) -> None:
+    """Dump all TEXT keywords of an FCS file to a JSON file under "fcs_text".
+
+    Keywords are as read by flowio (lowercased, without the leading "$"),
+    values are the unchanged strings. An existing file is overwritten.
+    """
+    fcs = flowio.FlowData(fcs_path, only_text=True)
+    with open(metadata_path, "w") as f:
+        json.dump({"fcs_text": fcs.text}, f, indent=2)
 
 
 if __name__ == "__main__":
