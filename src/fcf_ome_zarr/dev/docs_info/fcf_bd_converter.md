@@ -6,6 +6,8 @@
 
 ### Outputs
 - A single mosaic OME-Zarr file containing all converted images. Optionally in plate format
+- Images are stored as float32, or optionally as uint16 (values clipped to [0, 8] and
+  scaled to the full uint16 range)
 - If an FCS file is provided, an "fcs_events" feature table with the raw values of all
   events, indexed by "event_index" (matching the FOV ROI names), and a "fcs_metadata.json"
   file next to the image "zarr.json" with all FCS TEXT keywords under "fcs_text".

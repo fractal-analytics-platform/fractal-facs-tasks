@@ -135,6 +135,25 @@ def test_fov_rois_match_source_tiff_pages(
     assert np.count_nonzero(image.get_as_numpy()) == n_nonzero
 
 
+def test_convert_to_uint16_scales_0_to_8_to_full_range(
+    tmp_path: Path, example_bd_dataset: ExampleBDDataset
+):
+    zarr_url = run_converter(
+        tmp_path, example_bd_dataset.tiff_dir, convert_to_uint16=True
+    )
+    ome_zarr = open_ome_zarr_container(zarr_url)
+    image = ome_zarr.get_image()
+    assert image.dtype == "uint16"
+
+    # First tile: negative values are clipped to 0, 8 maps to 65535
+    roi = ome_zarr.get_roi_table("FOV_ROI_table").rois()[0]
+    tif_path = sorted(example_bd_dataset.tiff_dir.rglob("*.tif*"))[0]
+    with tifffile.TiffFile(tif_path) as tif:
+        pages = np.stack([page.asarray() for page in tif.pages])
+    expected = np.round(np.clip(pages, 0, 8) * 65535 / 8).astype(np.uint16)
+    np.testing.assert_array_equal(image.get_roi_as_numpy(roi), expected)
+
+
 def test_converter_writes_image_inside_fake_plate(
     tmp_path: Path, example_bd_dataset: ExampleBDDataset
 ):

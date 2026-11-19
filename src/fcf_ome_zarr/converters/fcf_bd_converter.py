@@ -3,7 +3,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Final, Optional
 
 import flowio
 import ngio
@@ -28,6 +28,9 @@ from fcf_ome_zarr.constants import (
 from fcf_ome_zarr.converters.mosaic import MosaicLayout, pad_to_shape
 from fcf_ome_zarr.utils import sanitize_string
 
+# Float intensity mapped to the uint16 maximum when converting to uint16
+UINT16_MAX_INTENSITY: Final = 8.0
+
 
 @validate_call
 def fcf_bd_converter(
@@ -41,6 +44,7 @@ def fcf_bd_converter(
     fake_a_plate: bool = True,
     add_z_singleton: bool = False,
     use_sharding: bool = False,
+    convert_to_uint16: bool = False,
     target_chunk_size: int = 512,
     target_shard_size: int = 2048,
     convert_first_x_tiffs: Optional[int] = None,
@@ -92,6 +96,9 @@ def fcf_bd_converter(
             and chunks are about `target_chunk_size` pixels per side. Chunks
             and shards always hold all channels and a whole number of tiles.
             Defaults to False.
+        convert_to_uint16: Whether to store the image as uint16 instead of
+            float32. Values are clipped to [0, 8] and scaled linearly to the
+            full uint16 range [0, 65535]. Defaults to False.
         target_chunk_size: Target size in pixels of the chunks along y and x,
             used only without sharding. Rounded to the closest whole number of
             tiles (at least one). This parameter is ignored if `use_sharding` is True.
@@ -169,7 +176,7 @@ def fcf_bd_converter(
         axes_names=["c", "z", "y", "x"] if add_z_singleton else ["c", "y", "x"],
         pixelsize=layout.pixel_size,
         channels_meta=list(layout.channel_labels),
-        dtype="float32",
+        dtype="uint16" if convert_to_uint16 else "float32",
         chunks=chunks,
         shards=shards,
         overwrite=overwrite,
@@ -193,8 +200,11 @@ def fcf_bd_converter(
             if img.ndim == 2:
                 raise ValueError(f"TIFF image {tif_path} only contains one channel")
 
+        if convert_to_uint16:
+            img = float_to_uint16(img)
+
         # Place padded image into the mosaic tile
-        padded = pad_to_shape(img, target_shape=layout.tile)
+        padded = pad_to_shape(img, target_shape=layout.tile, dtype=img.dtype)
         zarr_array[tile_slice] = padded
 
         # Calculate roi slices
@@ -235,6 +245,13 @@ def fcf_bd_converter(
     return {
         "image_list_updates": [{"zarr_url": str(zarr_url), "attributes": attributes}]
     }
+
+
+def float_to_uint16(img: np.ndarray) -> np.ndarray:
+    """Clip to [0, UINT16_MAX_INTENSITY] and scale linearly to [0, 65535]."""
+    max_uint16 = np.iinfo(np.uint16).max
+    scaled = np.clip(img, 0, UINT16_MAX_INTENSITY) * (max_uint16 / UINT16_MAX_INTENSITY)
+    return np.round(scaled).astype(np.uint16)
 
 
 def read_fcs_events(fcs_path: Path) -> FeatureTable:
