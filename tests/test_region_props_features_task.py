@@ -1,8 +1,10 @@
+import itertools
 from pathlib import Path
 
 import numpy as np
 import pytest
 from ngio import open_ome_zarr_container
+from skimage import measure
 
 from fcf_ome_zarr.converters.fcf_bd_converter import fcf_bd_converter
 from fcf_ome_zarr.region_props_features_task import (
@@ -41,8 +43,26 @@ def test_columns_named_by_channel(zarr_url: str, bd_channel_labels: tuple):
         for channel in bd_channel_labels
     }
     assert expected <= set(df.columns)
-    # No leftover columns suffixed with the channel index
-    assert not [col for col in df.columns if col.rsplit("-", 1)[-1].isdigit()]
+    # No leftover intensity columns suffixed with the channel index
+    leftover = {
+        f"{prop}-{i}"
+        for prop in INTENSITY_PROPERTIES
+        for i in range(len(bd_channel_labels))
+    }
+    assert not leftover & set(df.columns)
+
+    # BD-like features: one column per channel, or per channel pair
+    pairs = list(itertools.combinations(bd_channel_labels, 2))
+    fluo_pairs = list(itertools.combinations(bd_channel_labels[3:], 2))
+    bd_columns = {
+        f"{prop}-{channel}"
+        for prop in ("intensity_total", "centroid_weighted_delta", "radial_moment")
+        for channel in bd_channel_labels
+    }
+    bd_columns |= {f"delta_com-{a}-{b}" for a, b in pairs}
+    bd_columns |= {f"correlation-{a}-{b}" for a, b in fluo_pairs}
+    assert bd_columns | {"axis_ratio"} <= set(df.columns)
+    assert len([col for col in df.columns if col.startswith("correlation-")]) == 3
 
 
 def test_features_match_image(zarr_url: str, bd_channel_labels: tuple):
@@ -55,7 +75,7 @@ def test_features_match_image(zarr_url: str, bd_channel_labels: tuple):
     ome_zarr = open_ome_zarr_container(zarr_url)
     df = ome_zarr.get_feature_table(TABLE_NAME).dataframe
     image_ngio = ome_zarr.get_image()
-    image = image_ngio.get_as_numpy(axes_order="cyx")
+    image = image_ngio.get_as_numpy(axes_order="yxc")
     pixel_size = np.array([image_ngio.pixel_size.y, image_ngio.pixel_size.x])
     label = ome_zarr.get_label(LABEL_NAME).get_as_numpy(axes_order="yx")
 
@@ -72,16 +92,39 @@ def test_features_match_image(zarr_url: str, bd_channel_labels: tuple):
         coords = np.argwhere(mask) * pixel_size
         variance = np.linalg.eigvalsh(np.cov(coords.T, bias=True)).max()
         assert row["axis_major_length"] == pytest.approx(4 * np.sqrt(variance))
-        for channel_img, channel in zip(image, bd_channel_labels, strict=True):
-            pixels = channel_img[mask].astype(np.float64)
-            assert row[f"mean_intensity-{channel}"] == pytest.approx(
-                pixels.mean(), rel=1e-5, abs=1e-9
+        assert row["axis_ratio"] == pytest.approx(
+            row["axis_minor_length"] / row["axis_major_length"]
+        )
+        # Weighted centroids from skimage, in physical units
+        region = measure.regionprops(
+            mask.astype(int),
+            intensity_image=image,
+            spacing=pixel_size,
+        )[0]
+        centroids = np.asarray(region.centroid_weighted_local).T  # (C, yx)
+        a, b = bd_channel_labels[0], bd_channel_labels[3]
+        assert row[f"delta_com-{a}-{b}"] == pytest.approx(
+            np.linalg.norm(centroids[0] - centroids[3]), rel=1e-4
+        )
+        pixels = image[mask].astype(np.float64)  # (N, C)
+        for c, channel in enumerate(bd_channel_labels):
+            assert row[f"intensity_mean-{channel}"] == pytest.approx(
+                pixels[:, c].mean(), rel=1e-5, abs=1e-9
             )
-            assert row[f"max_intensity-{channel}"] == pytest.approx(
-                pixels.max(), rel=1e-5, abs=1e-9
+            assert row[f"intensity_max-{channel}"] == pytest.approx(
+                pixels[:, c].max(), rel=1e-5, abs=1e-9
             )
-            assert row[f"min_intensity-{channel}"] == pytest.approx(
-                pixels.min(), rel=1e-5, abs=1e-9
+            assert row[f"intensity_min-{channel}"] == pytest.approx(
+                pixels[:, c].min(), rel=1e-5, abs=1e-9
+            )
+            assert row[f"intensity_median-{channel}"] == pytest.approx(
+                np.median(pixels[:, c]), rel=1e-5, abs=1e-9
+            )
+            assert row[f"intensity_total-{channel}"] == pytest.approx(
+                pixels[:, c].sum(), rel=1e-5, abs=1e-9
+            )
+            assert row[f"centroid_weighted_delta-{channel}"] == pytest.approx(
+                np.linalg.norm(centroids[c] - region.centroid_local), rel=1e-4
             )
 
 
