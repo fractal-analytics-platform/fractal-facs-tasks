@@ -11,6 +11,9 @@ FOV_ROI_TABLE: Final = "FOV_ROI_table"
 IMAGE_ROI_TABLE: Final = "image_ROI_table"
 FCS_EVENTS_TABLE: Final = "fcs_events"
 
+# JSON file written next to the image zarr.json, holding the FCS TEXT keywords
+FCS_METADATA_FILE: Final = "fcs_metadata.json"
+
 # Column linking tables to FCS events, i.e. the event position in the FCS file
 EVENT_INDEX_KEY: Final = "event_index"
 
