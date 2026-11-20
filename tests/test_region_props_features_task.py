@@ -41,8 +41,13 @@ def test_columns_named_by_channel(zarr_url: str, bd_channel_labels: tuple):
         for channel in bd_channel_labels
     }
     assert expected <= set(df.columns)
-    # No leftover columns suffixed with the channel index
-    assert not [col for col in df.columns if col.rsplit("-", 1)[-1].isdigit()]
+    # No leftover intensity columns suffixed with the channel index
+    leftover = {
+        f"{prop}-{i}"
+        for prop in INTENSITY_PROPERTIES
+        for i in range(len(bd_channel_labels))
+    }
+    assert not leftover & set(df.columns)
 
 
 def test_features_match_image(zarr_url: str, bd_channel_labels: tuple):
@@ -74,14 +79,17 @@ def test_features_match_image(zarr_url: str, bd_channel_labels: tuple):
         assert row["axis_major_length"] == pytest.approx(4 * np.sqrt(variance))
         for channel_img, channel in zip(image, bd_channel_labels, strict=True):
             pixels = channel_img[mask].astype(np.float64)
-            assert row[f"mean_intensity-{channel}"] == pytest.approx(
+            assert row[f"intensity_mean-{channel}"] == pytest.approx(
                 pixels.mean(), rel=1e-5, abs=1e-9
             )
-            assert row[f"max_intensity-{channel}"] == pytest.approx(
+            assert row[f"intensity_max-{channel}"] == pytest.approx(
                 pixels.max(), rel=1e-5, abs=1e-9
             )
-            assert row[f"min_intensity-{channel}"] == pytest.approx(
+            assert row[f"intensity_min-{channel}"] == pytest.approx(
                 pixels.min(), rel=1e-5, abs=1e-9
+            )
+            assert row[f"intensity_median-{channel}"] == pytest.approx(
+                np.median(pixels), rel=1e-5, abs=1e-9
             )
 
 

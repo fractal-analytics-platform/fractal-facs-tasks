@@ -16,10 +16,11 @@ from fcf_ome_zarr.constants import TABLE_BACKEND
 logger = logging.getLogger("region_props_features_task")
 
 INTENSITY_PROPERTIES = (
-    "mean_intensity",
-    "max_intensity",
-    "min_intensity",
-    "std_intensity",
+    "intensity_max",
+    "intensity_mean",
+    "intensity_median",
+    "intensity_min",
+    "intensity_std",
 )
 
 
@@ -55,13 +56,15 @@ def region_props_features_func(
             "label",
             "area",
             "area_bbox",
-            "convex_area",
+            "area_convex",
+            "axis_major_length",
+            "axis_minor_length",
+            "eccentricity",
             "equivalent_diameter_area",
             "euler_number",
             "extent",
             "feret_diameter_max",
-            "axis_major_length",
-            "axis_minor_length",
+            "inertia_tensor_eigvals",
             "solidity",
             *INTENSITY_PROPERTIES,
         ],
