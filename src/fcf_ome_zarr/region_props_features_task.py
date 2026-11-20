@@ -1,5 +1,6 @@
 """This is the Python module for my_task."""
 
+import itertools
 import logging
 
 import numpy as np
@@ -22,6 +23,65 @@ INTENSITY_PROPERTIES = (
     "intensity_min",
     "intensity_std",
 )
+
+# Imaging channels of the BD instruments. All other channels are fluorescence
+IMAGING_CHANNELS = ("LightLoss_Imaging", "FSC", "SSC_Imaging")
+
+
+def bd_features(
+    image: np.ndarray,
+    label: np.ndarray,
+    channel_labels: list[str],
+    pixel_size: tuple[float, float],
+) -> dict[str, list[float]]:
+    """Proxies of the image features computed by the BD CellView software.
+
+    All features are computed on the pixels of each object's mask, with
+    intensity weights and distances in physical units:
+    - "intensity_total-<c>": sum of the pixel intensities.
+    - "centroid_weighted_delta-<c>": distance between the intensity-weighted
+      centroid and the mask centroid.
+    - "radial_moment-<c>": intensity-weighted mean distance of the pixels from
+      the intensity-weighted centroid.
+    - "delta_com-<c1>-<c2>": distance between the intensity-weighted centroids
+      of two channels, for all channel pairs.
+    - "correlation-<c1>-<c2>": Pearson correlation of the pixel intensities of
+      two fluorescence channels.
+    """
+    assert set(IMAGING_CHANNELS) <= set(channel_labels), (
+        f"Expected the scatter channels {IMAGING_CHANNELS} in {channel_labels}"
+    )
+    fluo = [i for i, c in enumerate(channel_labels) if c not in IMAGING_CHANNELS]
+    channel_pairs = list(itertools.combinations(range(len(channel_labels)), 2))
+    fluo_pairs = list(itertools.combinations(fluo, 2))
+
+    features = {}
+    for region in measure.regionprops(label):
+        pixels = image[region.coords[:, 0], region.coords[:, 1]]
+        intensities = pixels.astype(np.float64)  # (N, C)
+        coords = region.coords * np.asarray(pixel_size)  # (N, yx)
+        total = intensities.sum(axis=0)  # (C,)
+        centroids = intensities.T @ coords / total[:, None]  # (C, yx)
+        delta = np.linalg.norm(centroids - coords.mean(axis=0), axis=1)
+        distances = np.linalg.norm(coords[:, None] - centroids[None], axis=2)
+        radial = (intensities * distances).sum(axis=0) / total
+        corr = np.corrcoef(intensities.T)
+        assert isinstance(corr, np.ndarray)  # (C, C), never a scalar for 2D input
+
+        values = {}
+        for i, c in enumerate(channel_labels):
+            values[f"intensity_total-{c}"] = total[i]
+            values[f"centroid_weighted_delta-{c}"] = delta[i]
+            values[f"radial_moment-{c}"] = radial[i]
+        for i, j in channel_pairs:
+            pair = f"{channel_labels[i]}-{channel_labels[j]}"
+            values[f"delta_com-{pair}"] = np.linalg.norm(centroids[i] - centroids[j])
+        for i, j in fluo_pairs:
+            pair = f"{channel_labels[i]}-{channel_labels[j]}"
+            values[f"correlation-{pair}"] = corr[i, j]
+        for key, value in values.items():
+            features.setdefault(key, []).append(float(value))
+    return features
 
 
 def region_props_features_func(
@@ -75,6 +135,8 @@ def region_props_features_func(
     for prop in INTENSITY_PROPERTIES:
         for i, channel_label in enumerate(channel_labels):
             props[f"{prop}-{channel_label}"] = props.pop(f"{prop}-{i}")
+    props["axis_ratio"] = props["axis_minor_length"] / props["axis_major_length"]
+    props.update(bd_features(image, label, channel_labels, pixel_size))
     # Add some more metadata columns
     # for example, the ROI name and timepoint
     num_regions = len(props["label"])
