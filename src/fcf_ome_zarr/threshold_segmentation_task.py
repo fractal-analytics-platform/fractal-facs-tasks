@@ -15,10 +15,6 @@ from skimage.measure import label
 from skimage.morphology import remove_small_objects
 
 from fcf_ome_zarr.constants import FOV_ROI_TABLE
-from fcf_ome_zarr.label_to_event_task import (
-    label_to_event_table_name,
-    write_label_to_event_table,
-)
 
 logger = logging.getLogger("threshold_segmentation_task")
 
@@ -74,9 +70,7 @@ def threshold_segmentation_task(
 
     Cells are expected to be darker than the background (e.g. light-loss
     channel). Segmentation runs separately for each ROI of the FOV_ROI_table,
-    and label are unique across the entire mosaic. The FCS event of each label
-    is saved in the "<label_name>_to_event" feature table, as the "event_index"
-    column matching the FOV ROI names.
+    and label are unique across the entire mosaic.
     Images are expected to be 2D, optionally with a singleton z axis, which is
     preserved in the output label.
 
@@ -89,8 +83,8 @@ def threshold_segmentation_task(
         sigma (tuple[float, float]): Standard deviation of the Gaussian smoothing
             along (y, x).
         max_size (int): Objects with this many pixels or fewer are removed.
-        overwrite (bool): Whether to overwrite an existing label image and
-            label to event table. Defaults to True.
+        overwrite (bool): Whether to overwrite an existing label image.
+            Defaults to True.
     """
     # Use the first of input_paths
     logger.info(f"{zarr_url=}")
@@ -101,12 +95,6 @@ def threshold_segmentation_task(
 
     if label_name is None:
         label_name = f"{channel.identifier}_thresholded"
-    table_name = label_to_event_table_name(label_name)
-    if not overwrite and table_name in ome_zarr.list_tables():
-        # Fail before writing the label image
-        raise FileExistsError(
-            f"Table {table_name} already exists. Set overwrite=True to overwrite it."
-        )
     label_ngio = ome_zarr.derive_label(name=label_name, overwrite=overwrite)
     logger.info(f"Output label image: {label_ngio=}")
 
@@ -129,36 +117,20 @@ def threshold_segmentation_task(
     logger.info(f"ROI table retrieved: {table=}")
     iterator = iterator.product(table)
     logger.info(f"Iterator updated with ROI table: {iterator=}")
-    fov_rois = table.rois()
-    assert len(iterator.rois) == len(fov_rois), "Expected one iteration per FOV"
 
     # Keep track of the maximum label to ensure unique across iterations
     max_label: int = 0
-    labels: list[int] = []
-    event_indices: list[int] = []
 
     # Core processing loop
     logger.info("Starting processing...")
-    for fov_roi, (image_data, writer) in zip(
-        fov_rois, iterator.iter_as_numpy(), strict=True
-    ):
+    for image_data, writer in iterator.iter_as_numpy():
         label_img = segment_cell(input_img=image_data, sigma=sigma, max_size=max_size)
         label_img = np.where(label_img == 0, 0, label_img + max_label)
         max_label = max(max_label, int(label_img.max()))
         writer(label_img)
-
-        fov_labels = np.unique(label_img[label_img > 0]).tolist()
-        labels.extend(fov_labels)
-        # FOV names are the FCS event index
-        event_indices.extend([int(fov_roi.get_name())] * len(fov_labels))
     # No need to call label.consolidate()
     # SegmentationIterator handles this
     logger.info(f"label {label_name} successfully created at {zarr_url}")
-
-    write_label_to_event_table(
-        ome_zarr, label_name, labels, event_indices, overwrite=overwrite
-    )
-    logger.info(f"Table {table_name} successfully created at {zarr_url}")
     return None
 
 

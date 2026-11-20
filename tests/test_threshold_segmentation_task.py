@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from ngio import open_ome_zarr_container
+from ngio.utils import NgioValueError
 from skimage.draw import disk
 
 from fcf_ome_zarr.converters.fcf_bd_converter import fcf_bd_converter
@@ -14,7 +15,6 @@ from fcf_ome_zarr.threshold_segmentation_task import (
 )
 
 LABEL_NAME = "LightLoss_Imaging_thresholded"
-TABLE_NAME = f"{LABEL_NAME}_to_event"
 
 # Synthetic FOVs mimic the LightLoss channel of the example data:
 # float32, bright background around 0.15, cells darker
@@ -73,42 +73,15 @@ def test_roundtrip_per_fov(zarr_url: str, params: dict):
         seen |= fov_labels
 
 
-def test_label_to_event_table(zarr_url: str):
-    """Every label is mapped to the event of the FOV it was segmented in."""
-    threshold_segmentation_task(zarr_url=zarr_url)
-
-    ome_zarr = open_ome_zarr_container(zarr_url)
-    label = ome_zarr.get_label(LABEL_NAME)
-    table = ome_zarr.get_feature_table(TABLE_NAME)
-    assert table.reference_label == LABEL_NAME
-    df = table.dataframe
-    assert df.index.name == "label"
-
-    expected: dict[int, int] = {}
-    for roi in ome_zarr.get_roi_table(FOV_ROI_TABLE).rois():
-        fov_labels = set(np.unique(label.get_roi_as_numpy(roi)).tolist()) - {0}
-        expected |= dict.fromkeys(fov_labels, int(roi.get_name()))
-    assert df.index.is_unique
-    mapping = dict(
-        zip(df.index.astype(int), df["event_index"].astype(int), strict=True)
-    )
-    assert mapping == expected
-
-    # Event indices link to the FCS events
-    events = ome_zarr.get_feature_table("fcs_events").dataframe
-    assert set(mapping.values()) <= set(events.index.astype(int))
-
-
 def test_custom_label_name(zarr_url: str):
     threshold_segmentation_task(zarr_url=zarr_url, label_name="cells")
 
-    tables = open_ome_zarr_container(zarr_url).list_tables()
-    assert "cells_to_event" in tables
+    assert "cells" in open_ome_zarr_container(zarr_url).list_labels()
 
 
 def test_no_overwrite(zarr_url: str):
     threshold_segmentation_task(zarr_url=zarr_url)
-    with pytest.raises(FileExistsError):
+    with pytest.raises(NgioValueError):
         threshold_segmentation_task(zarr_url=zarr_url, overwrite=False)
 
 
