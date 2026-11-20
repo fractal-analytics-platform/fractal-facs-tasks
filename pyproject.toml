@@ -128,18 +128,12 @@ default = { solve-group = "default" }
 dev = { features = ["dev"], solve-group = "default" }
 
 [tool.pixi.tasks]
-install-pre-commit = { cmd = ["pre-commit", "install"] }
-format-imports = { cmd = ["ruff", "check", "--select", "I", "--fix"] }
-format-code = { cmd = ["ruff", "format", "."] }
-
 create-manifest = { cmd = [
     "fractal-manifest",
     "create",
     "--package",
     "fcf-ome-zarr",
 ] }
-
-test = { cmd = ["pytest", "./tests/"] }
 
 init-tasks = [
     { task = "install-pre-commit", environment = "dev" },
@@ -148,3 +142,10 @@ init-tasks = [
     { task = "create-manifest", environment = "dev" },
     { task = "test", environment = "dev" },
 ]
+
+# Tasks that need the dev dependencies, run in the dev environment by default
+[tool.pixi.feature.dev.tasks]
+install-pre-commit = { cmd = ["pre-commit", "install"] }
+format-imports = { cmd = ["ruff", "check", "--select", "I", "--fix"] }
+format-code = { cmd = ["ruff", "format", "."] }
+test = { cmd = ["pytest", "./tests/"] }
