@@ -49,7 +49,7 @@ def bd_features(
       two fluorescence channels.
     """
     assert set(IMAGING_CHANNELS) <= set(channel_labels), (
-        f"Expected the scatter channels {IMAGING_CHANNELS} in {channel_labels}"
+        f"Expected the imaging channels {IMAGING_CHANNELS} in {channel_labels}"
     )
     fluo = [i for i, c in enumerate(channel_labels) if c not in IMAGING_CHANNELS]
     channel_pairs = list(itertools.combinations(range(len(channel_labels)), 2))
