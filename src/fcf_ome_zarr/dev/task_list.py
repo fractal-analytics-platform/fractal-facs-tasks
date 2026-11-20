@@ -17,6 +17,12 @@ TASK_LIST = [
         tags=["Instance Segmentation", "Classical segmentation"],
         docs_info="file:docs_info/threshold_segmentation_task.md",
     ),
+    ParallelTask(
+        name="Label to Event",
+        executable="label_to_event_task.py",
+        category="Measurement",
+        docs_info="file:docs_info/label_to_event_task.md",
+    ),
     ConverterNonParallelTask(
         name="FCF BD Converter",
         executable="converters/fcf_bd_converter.py",

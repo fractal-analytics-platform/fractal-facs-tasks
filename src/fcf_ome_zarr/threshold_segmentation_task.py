@@ -4,11 +4,9 @@ import logging
 from typing import Any
 
 import numpy as np
-import pandas as pd
 import scipy.ndimage as ndi
 from ngio import ChannelSelectionModel, open_ome_zarr_container
 from ngio.iterators import SegmentationIterator
-from ngio.tables import FeatureTable
 from numpy.typing import NDArray
 from pydantic import validate_call
 from skimage.exposure import rescale_intensity
@@ -16,7 +14,11 @@ from skimage.filters import threshold_yen
 from skimage.measure import label
 from skimage.morphology import remove_small_objects
 
-from fcf_ome_zarr.constants import EVENT_INDEX_KEY, FOV_ROI_TABLE, TABLE_BACKEND
+from fcf_ome_zarr.constants import FOV_ROI_TABLE
+from fcf_ome_zarr.label_to_event_task import (
+    label_to_event_table_name,
+    write_label_to_event_table,
+)
 
 logger = logging.getLogger("threshold_segmentation_task")
 
@@ -99,7 +101,7 @@ def threshold_segmentation_task(
 
     if label_name is None:
         label_name = f"{channel.identifier}_thresholded"
-    table_name = f"{label_name}_to_event"
+    table_name = label_to_event_table_name(label_name)
     if not overwrite and table_name in ome_zarr.list_tables():
         # Fail before writing the label image
         raise FileExistsError(
@@ -153,14 +155,8 @@ def threshold_segmentation_task(
     # SegmentationIterator handles this
     logger.info(f"label {label_name} successfully created at {zarr_url}")
 
-    label_to_event = pd.DataFrame(
-        {EVENT_INDEX_KEY: event_indices}, index=pd.Index(labels, name="label")
-    )
-    ome_zarr.add_table(
-        name=table_name,
-        table=FeatureTable(table_data=label_to_event, reference_label=label_name),
-        overwrite=overwrite,
-        backend=TABLE_BACKEND,
+    write_label_to_event_table(
+        ome_zarr, label_name, labels, event_indices, overwrite=overwrite
     )
     logger.info(f"Table {table_name} successfully created at {zarr_url}")
     return None
