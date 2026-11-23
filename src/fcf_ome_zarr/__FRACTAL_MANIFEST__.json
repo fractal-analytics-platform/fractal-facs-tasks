@@ -147,6 +147,47 @@
       }
     },
     {
+      "name": "Chunk ROI Table",
+      "category": "Image Processing",
+      "docs_info": "### Purpose\n- Build an ROI table whose ROIs cover whole chunks of the image, or whole shards if the image is sharded.\n- Useful to run tasks that iterate over ROI tables, but have no direct per chunk access, chunk by chunk.\n- Each ROI covers an n x n grid of chunks/shards along y and x; ROIs at the image edge are clipped to the image.\n- Only the highest resolution level is considered.\n\n### Outputs\n- An ROI table (default name \"chunk_ROI_table\") with one ROI per n x n grid of chunks/shards\n",
+      "type": "parallel",
+      "executable_parallel": "chunk_roi_table_task.py",
+      "args_schema_parallel": {
+        "additionalProperties": false,
+        "properties": {
+          "zarr_url": {
+            "title": "Zarr Url",
+            "type": "string",
+            "description": "URL to the OME-Zarr container"
+          },
+          "chunks_per_roi_side": {
+            "default": 1,
+            "exclusiveMinimum": 0,
+            "title": "Chunks Per Roi Side",
+            "type": "integer",
+            "description": "Number of chunks (or shards) per ROI side along y and x, e.g. 2 means each ROI covers a 2 x 2 grid of chunks. Defaults to 1."
+          },
+          "table_name": {
+            "default": "chunk_ROI_table",
+            "title": "Table Name",
+            "type": "string",
+            "description": "Name of the ROI table. Defaults to \"chunk_ROI_table\"."
+          },
+          "overwrite": {
+            "default": true,
+            "title": "Overwrite",
+            "type": "boolean",
+            "description": "Whether to overwrite an existing table. Defaults to True."
+          }
+        },
+        "required": [
+          "zarr_url"
+        ],
+        "type": "object",
+        "title": "ChunkRoiTableTask"
+      }
+    },
+    {
       "name": "FCF BD Converter",
       "category": "Conversion",
       "tags": [

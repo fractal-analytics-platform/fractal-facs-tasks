@@ -23,6 +23,12 @@ TASK_LIST = [
         category="Measurement",
         docs_info="file:docs_info/label_to_event_task.md",
     ),
+    ParallelTask(
+        name="Chunk ROI Table",
+        executable="chunk_roi_table_task.py",
+        category="Image Processing",
+        docs_info="file:docs_info/chunk_roi_table_task.md",
+    ),
     ConverterNonParallelTask(
         name="FCF BD Converter",
         executable="converters/fcf_bd_converter.py",
