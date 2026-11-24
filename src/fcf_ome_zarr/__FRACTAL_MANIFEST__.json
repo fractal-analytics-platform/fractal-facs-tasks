@@ -149,7 +149,7 @@
     {
       "name": "Chunk ROI Table",
       "category": "Image Processing",
-      "docs_info": "### Purpose\n- Build an ROI table whose ROIs cover whole chunks of the image, or whole shards if the image is sharded.\n- Useful to run tasks that iterate over ROI tables, but have no direct per chunk access, chunk by chunk.\n- Each ROI covers an n x n grid of chunks/shards along y and x; ROIs at the image edge are clipped to the image.\n- Only the highest resolution level is considered.\n\n### Outputs\n- An ROI table (default name \"chunk_ROI_table\") with one ROI per n x n grid of chunks/shards\n",
+      "docs_info": "### Purpose\n- Build an ROI table whose ROIs cover whole chunks of the image, or whole shards if the image is sharded.\n- Useful to run tasks that iterate over ROI tables, but have no direct per chunk access, chunk by chunk.\n- Each ROI covers an n x n grid of chunks/shards along y and x; ROIs at the image edge are clipped to the image.\n- Only the highest resolution level is considered.\n\n### Outputs\n- An ROI table with one ROI per n x n grid of chunks/shards, named \"chunk_ROI_table_{n}x{n}\" (\"shard_ROI_table_{n}x{n}\" if the image is sharded) unless a table name is given\n",
       "type": "parallel",
       "executable_parallel": "chunk_roi_table_task.py",
       "args_schema_parallel": {
@@ -168,10 +168,17 @@
             "description": "Number of chunks (or shards) per ROI side along y and x, e.g. 2 means each ROI covers a 2 x 2 grid of chunks. Defaults to 1."
           },
           "table_name": {
-            "default": "chunk_ROI_table",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
             "title": "Table Name",
-            "type": "string",
-            "description": "Name of the ROI table. Defaults to \"chunk_ROI_table\"."
+            "description": "Name of the ROI table. If None, it is \"chunk_ROI_table_{n}x{n}\", or \"shard_ROI_table_{n}x{n}\" if the image is sharded, with n = chunks_per_roi_side. Defaults to None."
           },
           "overwrite": {
             "default": true,

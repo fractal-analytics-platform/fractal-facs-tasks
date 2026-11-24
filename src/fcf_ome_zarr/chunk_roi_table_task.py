@@ -19,7 +19,7 @@ def chunk_roi_table_task(
     zarr_url: str,
     # Input parameters
     chunks_per_roi_side: PositiveInt = 1,
-    table_name: str = "chunk_ROI_table",
+    table_name: str | None = None,
     overwrite: bool = True,
 ) -> None:
     """Build an ROI table whose ROIs cover whole chunks (or shards) of the image.
@@ -34,20 +34,27 @@ def chunk_roi_table_task(
         chunks_per_roi_side (int): Number of chunks (or shards) per ROI side
             along y and x, e.g. 2 means each ROI covers a 2 x 2 grid of chunks.
             Defaults to 1.
-        table_name (str): Name of the ROI table. Defaults to "chunk_ROI_table".
+        table_name (str | None): Name of the ROI table. If None, it is
+            "chunk_ROI_table_{n}x{n}", or "shard_ROI_table_{n}x{n}" if the image
+            is sharded, with n = chunks_per_roi_side. Defaults to None.
         overwrite (bool): Whether to overwrite an existing table. Defaults to
             True.
     """
     logger.info(f"{zarr_url=}")
 
     ome_zarr = open_ome_zarr_container(zarr_url)
+    # Highest resolution level; only metadata is read, no pixel data
+    image = ome_zarr.get_image()
+
+    if table_name is None:
+        block_type = "chunk" if image.zarr_array.shards is None else "shard"
+        n = chunks_per_roi_side
+        table_name = f"{block_type}_ROI_table_{n}x{n}"
     if not overwrite and table_name in ome_zarr.list_tables():
         raise FileExistsError(
             f"Table {table_name} already exists. Set overwrite=True to overwrite it."
         )
 
-    # Highest resolution level; only metadata is read, no pixel data
-    image = ome_zarr.get_image()
     # Shard shape if the array is sharded, chunk shape otherwise
     block = dict(zip(image.axes, image.write_granularity, strict=True))
     logger.info(f"Chunk/shard shape: {block}")

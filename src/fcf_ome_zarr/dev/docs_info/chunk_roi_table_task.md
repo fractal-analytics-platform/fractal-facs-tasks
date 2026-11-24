@@ -5,4 +5,4 @@
 - Only the highest resolution level is considered.
 
 ### Outputs
-- An ROI table (default name "chunk_ROI_table") with one ROI per n x n grid of chunks/shards
+- An ROI table with one ROI per n x n grid of chunks/shards, named "chunk_ROI_table_{n}x{n}" ("shard_ROI_table_{n}x{n}" if the image is sharded) unless a table name is given
