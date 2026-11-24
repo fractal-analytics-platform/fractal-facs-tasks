@@ -18,12 +18,12 @@ def _convert(tmp_path: Path, tiff_dir: Path, **kwargs) -> str:
     return result["image_list_updates"][0]["zarr_url"]
 
 
-def _roi_boxes_px(zarr_url: str) -> list[tuple[int, int, int, int]]:
+def _roi_boxes_px(zarr_url: str, table_name: str) -> list[tuple[int, int, int, int]]:
     """(y_start, y_end, x_start, x_end) in pixels of each ROI of the table."""
     ome_zarr = open_ome_zarr_container(zarr_url)
     pixel_size = ome_zarr.get_image().pixel_size
     boxes = []
-    for roi in ome_zarr.get_roi_table("chunk_ROI_table").rois():
+    for roi in ome_zarr.get_roi_table(table_name).rois():
         slices = roi.to_slicing_dict(pixel_size)
         y, x = slices["y"], slices["x"]
         boxes.append((round(y.start), round(y.stop), round(x.start), round(x.stop)))
@@ -32,12 +32,13 @@ def _roi_boxes_px(zarr_url: str) -> list[tuple[int, int, int, int]]:
 
 # The S8 mosaic is 146 x 208 px, made of 2 x 2 tiles of 73 x 104 px
 @pytest.mark.parametrize(
-    ("converter_kwargs", "chunks_per_roi_side", "expected"),
+    ("converter_kwargs", "chunks_per_roi_side", "table_name", "expected"),
     [
         # Chunks of one tile
         (
             {"target_chunk_size": 1},
             1,
+            "chunk_ROI_table_1x1",
             [
                 (0, 73, 0, 104),
                 (0, 73, 104, 208),
@@ -49,12 +50,14 @@ def _roi_boxes_px(zarr_url: str) -> list[tuple[int, int, int, int]]:
         (
             {"use_sharding": True, "target_shard_size": 150},
             1,
+            "shard_ROI_table_1x1",
             [(0, 146, 0, 104), (0, 146, 104, 208)],
         ),
         # 2 x 2 shards, clipped to the image
         (
             {"use_sharding": True, "target_shard_size": 150},
             2,
+            "shard_ROI_table_2x2",
             [(0, 146, 0, 208)],
         ),
     ],
@@ -64,8 +67,17 @@ def test_chunk_roi_table(
     bd_s8_tiff_dir: Path,
     converter_kwargs: dict,
     chunks_per_roi_side: int,
+    table_name: str,
     expected: list[tuple[int, int, int, int]],
 ):
     zarr_url = _convert(tmp_path, bd_s8_tiff_dir, **converter_kwargs)
     chunk_roi_table_task(zarr_url=zarr_url, chunks_per_roi_side=chunks_per_roi_side)
-    assert _roi_boxes_px(zarr_url) == expected
+    assert _roi_boxes_px(zarr_url, table_name) == expected
+
+
+def test_explicit_table_name(tmp_path: Path, bd_s8_tiff_dir: Path):
+    zarr_url = _convert(tmp_path, bd_s8_tiff_dir)
+    chunk_roi_table_task(zarr_url=zarr_url, table_name="my_ROI_table")
+    tables = open_ome_zarr_container(zarr_url).list_tables()
+    assert "my_ROI_table" in tables
+    assert "chunk_ROI_table_1x1" not in tables
