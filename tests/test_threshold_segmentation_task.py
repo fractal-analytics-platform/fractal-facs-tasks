@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -6,7 +7,6 @@ from ngio import open_ome_zarr_container
 from ngio.utils import NgioValueError
 from skimage.draw import disk
 
-from fcf_ome_zarr.converters.fcf_bd_converter import fcf_bd_converter
 from fcf_ome_zarr.threshold_segmentation_task import (
     DEFAULT_CHANNEL,
     FOV_ROI_TABLE,
@@ -26,20 +26,13 @@ CELL = 0.1
 @pytest.fixture(params=[False, True], ids=["yx", "z_singleton"])
 def zarr_url(
     request: pytest.FixtureRequest,
-    tmp_path: Path,
-    bd_s8_tiff_dir: Path,
+    convert_bd_s8: Callable[..., str],
     bd_s8_fcs_path: Path,
 ):
     """OME-Zarr produced by the BD converter from the example data."""
-    result = fcf_bd_converter(
-        tiff_folder_path=str(bd_s8_tiff_dir),
-        zarr_dir=str(tmp_path),
-        fcs_file_path=str(bd_s8_fcs_path),
-        fake_a_plate=False,
-        add_z_singleton=request.param,
+    return convert_bd_s8(
+        fcs_file_path=str(bd_s8_fcs_path), add_z_singleton=request.param
     )
-    assert result is not None
-    return result["image_list_updates"][0]["zarr_url"]
 
 
 @pytest.mark.parametrize(

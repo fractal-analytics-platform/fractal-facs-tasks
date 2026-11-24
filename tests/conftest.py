@@ -7,6 +7,8 @@ import numpy as np
 import pytest
 import tifffile
 
+from fcf_ome_zarr.converters.fcf_bd_converter import fcf_bd_converter
+
 BD_S8_DIR = Path(__file__).parent / "example_data" / "BD_S8"
 BD_A8_DIR = Path(__file__).parent / "example_data" / "BD_A8"
 
@@ -70,6 +72,26 @@ def bd_s8_tiff_dir() -> Path:
 def bd_s8_fcs_path() -> Path:
     """FCS file of the S8 example recording, reduced to the 4 imaged events."""
     return BD_S8_FCS_PATH
+
+
+@pytest.fixture
+def convert_bd_s8(tmp_path: Path) -> Callable[..., str]:
+    """Factory converting the S8 example TIFFs without a plate.
+
+    Keyword arguments are passed to the converter. Returns the zarr url.
+    """
+
+    def _convert(**kwargs) -> str:
+        result = fcf_bd_converter(
+            tiff_folder_path=str(BD_S8_TIFF_DIR),
+            zarr_dir=str(tmp_path),
+            fake_a_plate=False,
+            **kwargs,
+        )
+        assert result is not None
+        return result["image_list_updates"][0]["zarr_url"]
+
+    return _convert
 
 
 @pytest.fixture

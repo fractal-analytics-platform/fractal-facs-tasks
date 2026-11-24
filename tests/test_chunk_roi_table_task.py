@@ -1,21 +1,9 @@
-from pathlib import Path
+from collections.abc import Callable
 
 import pytest
 from ngio import open_ome_zarr_container
 
 from fcf_ome_zarr.chunk_roi_table_task import chunk_roi_table_task
-from fcf_ome_zarr.converters.fcf_bd_converter import fcf_bd_converter
-
-
-def _convert(tmp_path: Path, tiff_dir: Path, **kwargs) -> str:
-    result = fcf_bd_converter(
-        tiff_folder_path=str(tiff_dir),
-        zarr_dir=str(tmp_path),
-        fake_a_plate=False,
-        **kwargs,
-    )
-    assert result is not None
-    return result["image_list_updates"][0]["zarr_url"]
 
 
 def _roi_boxes_px(zarr_url: str, table_name: str) -> list[tuple[int, int, int, int]]:
@@ -63,20 +51,19 @@ def _roi_boxes_px(zarr_url: str, table_name: str) -> list[tuple[int, int, int, i
     ],
 )
 def test_chunk_roi_table(
-    tmp_path: Path,
-    bd_s8_tiff_dir: Path,
+    convert_bd_s8: Callable[..., str],
     converter_kwargs: dict,
     chunks_per_roi_side: int,
     table_name: str,
     expected: list[tuple[int, int, int, int]],
 ):
-    zarr_url = _convert(tmp_path, bd_s8_tiff_dir, **converter_kwargs)
+    zarr_url = convert_bd_s8(**converter_kwargs)
     chunk_roi_table_task(zarr_url=zarr_url, chunks_per_roi_side=chunks_per_roi_side)
     assert _roi_boxes_px(zarr_url, table_name) == expected
 
 
-def test_explicit_table_name(tmp_path: Path, bd_s8_tiff_dir: Path):
-    zarr_url = _convert(tmp_path, bd_s8_tiff_dir)
+def test_explicit_table_name(convert_bd_s8: Callable[..., str]):
+    zarr_url = convert_bd_s8()
     chunk_roi_table_task(zarr_url=zarr_url, table_name="my_ROI_table")
     tables = open_ome_zarr_container(zarr_url).list_tables()
     assert "my_ROI_table" in tables
