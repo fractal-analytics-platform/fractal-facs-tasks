@@ -3,7 +3,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Final, Optional
+from typing import Optional
 
 import flowio
 import ngio
@@ -24,12 +24,10 @@ from fcf_ome_zarr.constants import (
     IMAGE_ROI_TABLE,
     NGFF_VERSION,
     TABLE_BACKEND,
+    UINT16_MAX_INTENSITY,
 )
 from fcf_ome_zarr.converters.mosaic import MosaicLayout, pad_to_shape
 from fcf_ome_zarr.utils import sanitize_string
-
-# Float intensity mapped to the uint16 maximum when converting to uint16
-UINT16_MAX_INTENSITY: Final = 8.0
 
 
 @validate_call
