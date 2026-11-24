@@ -59,6 +59,7 @@ dev = [
     "devtools",
     "hatch",
     "pytest",
+    "pytest-cov",
     "requests",
     "jsonschema",
     "ruff",
@@ -106,6 +107,7 @@ skip-magic-trailing-comma = false # default is false
 
 # https://docs.pytest.org/en/stable/reference/customize.html
 [tool.pytest.ini_options]
+addopts = ["--cov=fcf_ome_zarr", "--cov-report=term-missing"]
 filterwarnings = [
     # scikit-image assigns `.shape` in marching cubes (used by regionprops),
     # deprecated in NumPy 2.5. Scoped to that message and module only.
@@ -114,6 +116,17 @@ filterwarnings = [
     # Scoped to that message and anndata modules only and using the parent
     # DeprecationWarning to preserve compatibility with Pandas 2
     "ignore:The 'future.infer_string' option is deprecated:DeprecationWarning:anndata\\..*",
+]
+
+# https://coverage.readthedocs.io/en/latest/config.html
+[tool.coverage.run]
+source = ["fcf_ome_zarr"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
 ]
 
 [tool.pixi.workspace]
