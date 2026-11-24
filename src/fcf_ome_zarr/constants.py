@@ -19,3 +19,6 @@ EVENT_INDEX_KEY: Final = "event_index"
 
 # OME-NGFF version of the OME-Zarrs written by these tasks
 NGFF_VERSION: Final = "0.5"
+
+# Float intensity mapped to the uint16 maximum when converting to uint16
+UINT16_MAX_INTENSITY: Final = 8.0

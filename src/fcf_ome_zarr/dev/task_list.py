@@ -29,6 +29,12 @@ TASK_LIST = [
         category="Image Processing",
         docs_info="file:docs_info/chunk_roi_table_task.md",
     ),
+    ParallelTask(
+        name="Invert Channel",
+        executable="invert_channel_task.py",
+        category="Image Processing",
+        docs_info="file:docs_info/invert_channel_task.md",
+    ),
     ConverterNonParallelTask(
         name="FCF BD Converter",
         executable="converters/fcf_bd_converter.py",
