@@ -119,3 +119,28 @@ def test_existing_inverted_label_raises(zarr_url: str):
     invert_channel_task(zarr_url=zarr_url, channel_label=CHANNEL)
     with pytest.raises(ValueError, match="already exists"):
         invert_channel_task(zarr_url=zarr_url, channel_label=CHANNEL)
+
+
+def test_sharded_image(convert_bd_s8: Callable[..., str]):
+    zarr_url = convert_bd_s8(use_sharding=True, target_shard_size=150)
+    invert_channel_task(zarr_url=zarr_url, channel_label=CHANNEL)
+
+    image = open_ome_zarr_container(zarr_url).get_image()
+    shards = image.zarr_array.shards
+    assert shards is not None
+    # Chunks and shards hold all channels, including the new one
+    assert image.chunks[0] == shards[0] == len(image.channel_labels)
+
+
+def test_unsupported_dtype_raises(convert_bd_s8: Callable[..., str], tmp_path: Path):
+    int_url = str(tmp_path / "int16.ome.zarr")
+    open_ome_zarr_container(convert_bd_s8()).derive_image(store=int_url, dtype="int16")
+    with pytest.raises(TypeError, match="Cannot invert"):
+        invert_channel_task(zarr_url=int_url, channel_label=CHANNEL)
+
+
+def test_leftover_derived_image_raises(convert_bd_s8: Callable[..., str]):
+    zarr_url = convert_bd_s8()
+    Path(f"{zarr_url}_inverted").mkdir()
+    with pytest.raises(FileExistsError, match="failed run"):
+        invert_channel_task(zarr_url=zarr_url, channel_label=CHANNEL)
