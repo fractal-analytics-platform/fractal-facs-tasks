@@ -197,7 +197,7 @@
     {
       "name": "Invert Channel",
       "category": "Image Processing",
-      "docs_info": "### Purpose\n- Invert one channel of the mosaic image, selected by label, and add it as a new channel \"<label>_inv\".\n- Unsigned integer images are inverted as dtype_max - x, float images as c - x (c defaults to 8.0, the float intensity mapped to the uint16 maximum by the converter).\n- Only the FOVs of the \"FOV_ROI_table\" are inverted; the padding between FOVs stays 0.\n\n### Outputs\n- The input image, rewritten in place with the extra \"<label>_inv\" channel; labels, tables and FCS metadata are kept\n",
+      "docs_info": "### Purpose\n- Invert one channel of the mosaic image, selected by label, and add it as a new channel \"<label>_inv\", so that objects darker than the background become bright.\n- The channel is inverted around its background c as max(0, c - x). c is the median of the channel over the FOVs, leaving out the padding between FOVs.\n- Only the FOVs of the \"FOV_ROI_table\" are inverted; the padding between FOVs stays 0.\n\n### Outputs\n- The input image, rewritten in place with the extra \"<label>_inv\" channel; labels, tables and FCS metadata are kept\n",
       "type": "parallel",
       "executable_parallel": "invert_channel_task.py",
       "args_schema_parallel": {
@@ -212,12 +212,6 @@
             "title": "Channel Label",
             "type": "string",
             "description": "Label of the channel to invert."
-          },
-          "inversion_constant": {
-            "default": 8.0,
-            "title": "Inversion Constant",
-            "type": "number",
-            "description": "Constant c of the inversion c - x, only used for float images. The default matches the float intensity mapped to the uint16 maximum by the converter, so inverted float and uint16 images match after conversion. Defaults to 8.0."
           }
         },
         "required": [

@@ -10,7 +10,7 @@ from fcf_ome_zarr.constants import (
     FOV_ROI_TABLE,
     UINT16_MAX_INTENSITY,
 )
-from fcf_ome_zarr.invert_channel_task import invert_channel_task
+from fcf_ome_zarr.invert_channel_task import invert, invert_channel_task
 
 CHANNEL = "LightLoss_Imaging"
 
@@ -32,15 +32,43 @@ def _channel(zarr_url: str, label: str) -> np.ndarray:
     return image.get_as_numpy(channel_selection=label, axes_order="yx")
 
 
-def test_inverting_twice_gives_original(zarr_url: str):
-    original = _channel(zarr_url, CHANNEL)
+def _background(zarr_url: str) -> float:
+    """Median of the per-FOV medians of the source channel."""
+    ome_zarr = open_ome_zarr_container(zarr_url)
+    image = ome_zarr.get_image()
+    rois = ome_zarr.get_roi_table(FOV_ROI_TABLE).rois()
+    return float(
+        np.median(
+            [
+                np.median(image.get_roi_as_numpy(r, channel_selection=CHANNEL))
+                for r in rois
+            ]
+        )
+    )
 
-    invert_channel_task(zarr_url=zarr_url, channel_label=CHANNEL)
-    invert_channel_task(zarr_url=zarr_url, channel_label=f"{CHANNEL}_inv")
 
-    # Exact for uint16; float32 rounding of 8 - x is about 1e-7
+def test_invert():
+    floats = np.array([0.5, 1.0, 1.5], dtype=np.float32)
+    np.testing.assert_array_equal(invert(floats, 1.0), [0.5, 0.0, 0.0])
+    assert invert(floats, 1.0).dtype == np.float32
+
+    uints = np.array([100, 200, 300], dtype=np.uint16)
+    np.testing.assert_array_equal(invert(uints, 250.4), [150, 50, 0])
+    assert invert(uints, 250.4).dtype == np.uint16
+
+
+def test_float32_and_uint16_match(convert_bd_s8: Callable[..., str]):
+    float_url = convert_bd_s8(zarr_name="float32")
+    uint_url = convert_bd_s8(zarr_name="uint16", convert_to_uint16=True)
+    invert_channel_task(zarr_url=float_url, channel_label=CHANNEL)
+    invert_channel_task(zarr_url=uint_url, channel_label=CHANNEL)
+
+    inverted = _channel(float_url, f"{CHANNEL}_inv")
+    assert inverted.max() > 0
+    # uint16 = round(float * scale); c and x each round by up to 0.5
+    scale = np.iinfo(np.uint16).max / UINT16_MAX_INTENSITY
     np.testing.assert_allclose(
-        _channel(zarr_url, f"{CHANNEL}_inv_inv"), original, rtol=0, atol=1e-6
+        _channel(uint_url, f"{CHANNEL}_inv") / scale, inverted, rtol=0, atol=2 / scale
     )
 
 
@@ -73,11 +101,11 @@ def test_metadata_and_tables_kept(zarr_url: str):
     *originals, inverted = after.get_image().channels_meta.channels
     assert originals == channels
     assert inverted.label == f"{CHANNEL}_inv"
-    # The inverted window mirrors the source window: [c - end, c - start]
-    c = 65535 if after.get_image().dtype == "uint16" else UINT16_MAX_INTENSITY
+    # The window is inverted like the data: max(0, c - x)
+    c = _background(zarr_url)
     source = next(ch for ch in channels if ch.label == CHANNEL).channel_visualisation
     window = (inverted.channel_visualisation.start, inverted.channel_visualisation.end)
-    assert window == pytest.approx((c - source.end, c - source.start))
+    assert window == pytest.approx((max(0, c - source.end), max(0, c - source.start)))
     assert after.list_tables() == tables
     assert (Path(zarr_url) / FCS_METADATA_FILE).exists()
 
@@ -90,4 +118,29 @@ def test_unknown_label_raises(zarr_url: str):
 def test_existing_inverted_label_raises(zarr_url: str):
     invert_channel_task(zarr_url=zarr_url, channel_label=CHANNEL)
     with pytest.raises(ValueError, match="already exists"):
+        invert_channel_task(zarr_url=zarr_url, channel_label=CHANNEL)
+
+
+def test_sharded_image(convert_bd_s8: Callable[..., str]):
+    zarr_url = convert_bd_s8(use_sharding=True, target_shard_size=150)
+    invert_channel_task(zarr_url=zarr_url, channel_label=CHANNEL)
+
+    image = open_ome_zarr_container(zarr_url).get_image()
+    shards = image.zarr_array.shards
+    assert shards is not None
+    # Chunks and shards hold all channels, including the new one
+    assert image.chunks[0] == shards[0] == len(image.channel_labels)
+
+
+def test_unsupported_dtype_raises(convert_bd_s8: Callable[..., str], tmp_path: Path):
+    int_url = str(tmp_path / "int16.ome.zarr")
+    open_ome_zarr_container(convert_bd_s8()).derive_image(store=int_url, dtype="int16")
+    with pytest.raises(TypeError, match="Cannot invert"):
+        invert_channel_task(zarr_url=int_url, channel_label=CHANNEL)
+
+
+def test_leftover_derived_image_raises(convert_bd_s8: Callable[..., str]):
+    zarr_url = convert_bd_s8()
+    Path(f"{zarr_url}_inverted").mkdir()
+    with pytest.raises(FileExistsError, match="failed run"):
         invert_channel_task(zarr_url=zarr_url, channel_label=CHANNEL)
