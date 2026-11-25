@@ -11,25 +11,20 @@ from ngio import open_ome_zarr_container
 from numpy.typing import NDArray
 from pydantic import validate_call
 
-from fcf_ome_zarr.constants import (
-    FCS_METADATA_FILE,
-    FOV_ROI_TABLE,
-    UINT16_MAX_INTENSITY,
-)
+from fcf_ome_zarr.constants import FCS_METADATA_FILE, FOV_ROI_TABLE
 
 logger = logging.getLogger("invert_channel_task")
 
 
-def invert(img: NDArray[Any], inversion_constant: float) -> NDArray[Any]:
-    """Invert an image; inverting twice gives back the original.
+def invert(img: NDArray[Any], background: float) -> NDArray[Any]:
+    """Invert an image around its background: max(0, background - x).
 
-    Unsigned integers map to dtype_max - x, floats to inversion_constant - x.
+    The result has the dtype of the input; integers are rounded.
     """
-    if np.issubdtype(img.dtype, np.unsignedinteger):
-        return np.invert(img)
-    if np.issubdtype(img.dtype, np.floating):
-        return inversion_constant - img
-    raise TypeError(f"Cannot invert images of dtype {img.dtype}.")
+    inverted = np.clip(background - img.astype(np.float64), 0, None)
+    if np.issubdtype(img.dtype, np.integer):
+        inverted = np.round(inverted)
+    return inverted.astype(img.dtype)
 
 
 @validate_call
@@ -39,14 +34,15 @@ def invert_channel_task(
     zarr_url: str,
     # Input parameters
     channel_label: str,
-    inversion_constant: float = UINT16_MAX_INTENSITY,
 ) -> None:
     """Invert one channel and add it to the image as "<channel_label>_inv".
 
-    The inverted channel is written only inside the ROIs of the FOV_ROI_table,
-    so the padding between FOVs stays 0. Unsigned integer images are inverted
-    as dtype_max - x, float images as inversion_constant - x. The window of
-    the new channel is the inverted window of the source channel.
+    The channel is inverted around its background c as max(0, c - x), so that
+    objects darker than the background become bright. c is the median of the
+    per-FOV medians of the channel, over the ROIs of the FOV_ROI_table, in the
+    units of the image. It is logged. The inverted channel is written only
+    inside the FOVs, so the padding between FOVs stays 0. The window of the new
+    channel is the source window inverted the same way.
 
     The image is rewritten with the extra channel next to the input, then
     swapped in place of it. Labels, tables and the FCS metadata are kept.
@@ -54,10 +50,6 @@ def invert_channel_task(
     Args:
         zarr_url (str): URL to the OME-Zarr container
         channel_label (str): Label of the channel to invert.
-        inversion_constant (float): Constant c of the inversion c - x, only
-            used for float images. The default matches the float intensity
-            mapped to the uint16 maximum by the converter, so inverted float
-            and uint16 images match after conversion. Defaults to 8.0.
     """
     logger.info(f"{zarr_url=}, {channel_label=}")
 
@@ -70,12 +62,18 @@ def invert_channel_task(
     if inv_label in channel_labels:
         raise ValueError(f"Channel {inv_label!r} already exists in {zarr_url}.")
 
-    # Constant c of the inversion c - x, as applied by invert()
-    dtype = np.dtype(image.dtype)
-    if dtype.kind == "u":
-        inversion_constant = float(np.iinfo(dtype).max)
-    elif dtype.kind != "f":
-        raise TypeError(f"Cannot invert images of dtype {dtype}.")
+    # Unsigned integer (uint16) or float (float32), as written by the converter
+    if np.dtype(image.dtype).kind not in "uf":
+        raise TypeError(f"Cannot invert images of dtype {image.dtype}.")
+
+    # First pass: background c, leaving out the padding between FOVs
+    rois = ome_zarr.get_roi_table(FOV_ROI_TABLE).rois()
+    fov_medians = [
+        np.median(image.get_roi_as_numpy(roi, channel_selection=channel_label))
+        for roi in rois
+    ]
+    background = float(np.median(fov_medians))
+    logger.info(f"Background of {channel_label}: c = {background}")
 
     derived_url = f"{zarr_url}_inverted"
     if Path(derived_url).exists():
@@ -109,16 +107,14 @@ def invert_channel_task(
     derived_image = derived.get_image()
     logger.info(f"Derived image: {derived_image=}")
 
-    # Write only inside the FOVs, so the padding stays at the fill value 0
-    for roi in ome_zarr.get_roi_table(FOV_ROI_TABLE).rois():
+    # Second pass: write only inside the FOVs, so the padding stays at 0
+    for roi in rois:
         derived_image.set_roi(
             roi, image.get_roi_as_numpy(roi), channel_selection=channel_labels
         )
         source_img = image.get_roi_as_numpy(roi, channel_selection=channel_label)
         derived_image.set_roi(
-            roi,
-            invert(source_img, inversion_constant),
-            channel_selection=inv_label,
+            roi, invert(source_img, background), channel_selection=inv_label
         )
     derived_image.consolidate(mode="auto")
 
@@ -129,7 +125,7 @@ def invert_channel_task(
         for ch in image.channels_meta.channels
     }
     start, end = windows[channel_label]
-    windows[inv_label] = (inversion_constant - end, inversion_constant - start)
+    windows[inv_label] = (max(0.0, background - end), max(0.0, background - start))
     derived.set_channel_windows(
         starts_ends=[windows[label] for label in derived.channel_labels]
     )
