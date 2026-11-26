@@ -246,7 +246,7 @@
           "input_path": {
             "title": "Input Path",
             "type": "string",
-            "description": "Path to the BD S8 or A8 recording to convert. Either a folder containing the exported TIFF files, or a `.cvw` waveform file. With a `.cvw` file, every event is converted and the pixel size is the one of the vendor TIFF exports."
+            "description": "Path to the BD S8 or A8 recording to convert. Either a folder containing the exported TIFF files, or a `.cvw` waveform file. With a `.cvw` file, the pixel size is the one of the vendor TIFF exports."
           },
           "fcs_file_path": {
             "anyOf": [
@@ -309,6 +309,19 @@
             "title": "Target Shard Size",
             "type": "integer",
             "description": "Target size in pixels of the shards along y and x, used only with sharding. Rounded to the closest whole number of tiles (at least one). This parameter is ignored if `use_sharding` is False. Defaults to 2048."
+          },
+          "convert_first_n_events": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Convert First N Events",
+            "description": "If provided, only the first N events are converted: the first N TIFF files of the folder, or the first N events of the `.cvw` file. This is useful for testing with fewer events. If None, all events are converted."
           },
           "overwrite": {
             "default": true,

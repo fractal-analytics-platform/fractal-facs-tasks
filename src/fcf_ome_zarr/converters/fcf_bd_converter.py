@@ -55,6 +55,7 @@ def fcf_bd_converter(
     convert_to_uint16: bool = False,
     target_chunk_size: int = 512,
     target_shard_size: int = 2048,
+    convert_first_n_events: Optional[int] = None,
     overwrite: bool = True,
 ) -> dict | None:
     """Convert BD S8 or A8 images into a single mosaic OME-Zarr image.
@@ -75,8 +76,8 @@ def fcf_bd_converter(
             (standard argument for Fractal tasks, managed by Fractal server).
         input_path: Path to the BD S8 or A8 recording to convert. Either a
             folder containing the exported TIFF files, or a `.cvw` waveform
-            file. With a `.cvw` file, every event is converted and the pixel
-            size is the one of the vendor TIFF exports.
+            file. With a `.cvw` file, the pixel size is the one of the vendor
+            TIFF exports.
         fcs_file_path: Path to the FCS file of the same recording. If provided,
             all its events are saved as the "fcs_events" feature table, with
             the raw values of all parameters and an "event_index" column
@@ -117,11 +118,15 @@ def fcf_bd_converter(
             used only with sharding. Rounded to the closest whole number of
             tiles (at least one). This parameter is ignored if `use_sharding` is False.
             Defaults to 2048.
+        convert_first_n_events: If provided, only the first N events are
+            converted: the first N TIFF files of the folder, or the first N
+            events of the `.cvw` file. This is useful for testing with fewer
+            events. If None, all events are converted.
         overwrite (bool): Whether to overwrite an existing OME-Zarr image (and
             fake plate, if `fake_a_plate` is True). Defaults to True.
     """
     logging.info(f"Processing {input_path=}")
-    source = _open_source(Path(input_path))
+    source = _open_source(Path(input_path), convert_first_n_events)
     layout = source.layout
 
     if zarr_name is None:
@@ -242,24 +247,31 @@ class MosaicSource:
     read_image: Callable[[int], np.ndarray]
 
 
-def _open_source(input_path: Path) -> MosaicSource:
-    """Pick the TIFF folder or the `.cvw` route, depending on the input path."""
+def _open_source(
+    input_path: Path, convert_first_n_events: Optional[int]
+) -> MosaicSource:
+    """Pick the TIFF folder or the `.cvw` route, depending on the input path.
+
+    If `convert_first_n_events` is given, only the first N events are used.
+    """
     if input_path.is_dir():
-        return _open_tiff_folder(input_path)
+        return _open_tiff_folder(input_path, convert_first_n_events)
     if input_path.suffix == ".cvw" and input_path.is_file():
-        return _open_cvw_file(input_path)
+        return _open_cvw_file(input_path, convert_first_n_events)
     raise ValueError(
         f"Input path {input_path} is neither a folder of TIFF files nor a .cvw file"
     )
 
 
-def _open_tiff_folder(tiff_folder: Path) -> MosaicSource:
+def _open_tiff_folder(
+    tiff_folder: Path, convert_first_n_events: Optional[int]
+) -> MosaicSource:
     """Images from a folder of TIFF files, one tile per file in sorted order.
 
     TIFF images are in subdirs containing up to 10000 images each, but their ID is
     unique across the whole folder.
     """
-    tif_paths = sorted(tiff_folder.rglob("*.tif*"))
+    tif_paths = sorted(tiff_folder.rglob("*.tif*"))[:convert_first_n_events]
 
     def read_image(i: int) -> np.ndarray:
         with tifffile.TiffFile(tif_paths[i]) as tif:
@@ -276,14 +288,17 @@ def _open_tiff_folder(tiff_folder: Path) -> MosaicSource:
     )
 
 
-def _open_cvw_file(cvw_path: Path) -> MosaicSource:
+def _open_cvw_file(
+    cvw_path: Path, convert_first_n_events: Optional[int]
+) -> MosaicSource:
     """Images reconstructed from a `.cvw` file, one tile per event."""
     cvw = CvwFile(cvw_path)
+    # Image sizes come from the file index, without reconstructing any image
+    n_rows = cvw.n_rows[:convert_first_n_events]
     layout = MosaicLayout(
-        # Image sizes come from the file index, without reconstructing any image
-        tile=TileSize(y=int(cvw.n_rows.max()), x=IMAGE_WIDTH),
+        tile=TileSize(y=int(n_rows.max()), x=IMAGE_WIDTH),
         pixel_size=CVW_PIXEL_SIZE,
-        n_tiles=cvw.n_events,
+        n_tiles=len(n_rows),
         channel_labels=tuple(sanitize_string(name) for name in cvw.channel_names),
     )
     return MosaicSource(name=cvw_path.stem, layout=layout, read_image=cvw.read_image)

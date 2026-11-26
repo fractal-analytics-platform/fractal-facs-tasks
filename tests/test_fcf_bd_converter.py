@@ -218,6 +218,18 @@ def test_converter_writes_channel_metadata(
         assert data[c].min() <= window.start < window.end <= data[c].max()
 
 
+def test_convert_first_n_events_skips_remaining_tiffs(
+    tmp_path: Path, mixed_tiff_dir: Path
+):
+    # The mismatching TIFF sorts last, converting it would raise
+    # Update this if the example dataset changes
+    zarr_url = run_converter(tmp_path, mixed_tiff_dir, convert_first_n_events=4)
+    image = open_ome_zarr_container(zarr_url).get_image()
+
+    # 4 tiles of (73, 104) pixels in a 2 x 2 grid
+    assert image.shape == (6, 146, 208)
+
+
 def test_mixed_folder_raises(tmp_path: Path, mixed_tiff_dir: Path):
     with pytest.raises(ValueError, match="mismatching channels"):
         fcf_bd_converter(input_path=str(mixed_tiff_dir), zarr_dir=str(tmp_path))

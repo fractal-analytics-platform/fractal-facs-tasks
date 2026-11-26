@@ -51,3 +51,21 @@ def test_cvw_input_matches_tiffs(tmp_path: Path, dataset: CvwDataset):
         assert roi_data.shape == expected.shape
         error = relative_error(roi_data, expected)
         assert error <= MAX_RELATIVE_ERROR, f"event {event}: relative error {error}"
+
+
+@pytest.mark.parametrize("dataset", CVW_DATASETS, ids=lambda d: d.name)
+def test_convert_first_n_events_skips_remaining_events(
+    tmp_path: Path, dataset: CvwDataset
+):
+    dataset.skip_if_missing()
+    result = fcf_bd_converter(
+        input_path=str(dataset.cvw_path),
+        zarr_dir=str(tmp_path),
+        fake_a_plate=False,
+        convert_first_n_events=3,
+    )
+    assert result is not None
+    zarr_url = result["image_list_updates"][0]["zarr_url"]
+    rois = open_ome_zarr_container(zarr_url).get_roi_table("FOV_ROI_table").rois()
+
+    assert [roi.name for roi in rois] == ["0", "1", "2"]
