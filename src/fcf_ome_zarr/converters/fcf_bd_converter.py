@@ -16,7 +16,7 @@ import tifffile
 from ngio import Roi
 from ngio.tables import FeatureTable, RoiTable
 from ngio.tables.v1._feature_table import FeatureTableMeta
-from pydantic import validate_call
+from pydantic import PositiveInt, validate_call
 from zarr import Array
 from zarr.storage import LocalStore
 
@@ -55,7 +55,7 @@ def fcf_bd_converter(
     convert_to_uint16: bool = False,
     target_chunk_size: int = 512,
     target_shard_size: int = 2048,
-    convert_first_n_events: Optional[int] = None,
+    convert_first_n_events: Optional[PositiveInt] = None,
     overwrite: bool = True,
 ) -> dict | None:
     """Convert BD S8 or A8 images into a single mosaic OME-Zarr image.

@@ -313,6 +313,7 @@
           "convert_first_n_events": {
             "anyOf": [
               {
+                "exclusiveMinimum": 0,
                 "type": "integer"
               },
               {
