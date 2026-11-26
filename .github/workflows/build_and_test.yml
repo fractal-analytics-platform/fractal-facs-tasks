@@ -41,7 +41,7 @@ jobs:
         run: fractal-manifest check --package fcf_ome_zarr
 
       - name: Test core library with pytest
-        run: python -m pytest tests
+        run: python -m pytest tests -m "not local_data"
 
   deploy:
     name: Deploy
