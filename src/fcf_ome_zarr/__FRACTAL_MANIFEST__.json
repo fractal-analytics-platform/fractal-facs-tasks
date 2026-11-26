@@ -246,7 +246,7 @@
           "input_path": {
             "title": "Input Path",
             "type": "string",
-            "description": "Path to the BD S8 or A8 recording to convert. Either a folder containing the exported TIFF files, or a `.cvw` waveform file."
+            "description": "Path to the BD S8 or A8 recording to convert. Either a folder containing the exported TIFF files, or a `.cvw` waveform file. With a `.cvw` file, the pixel size is computed from its metadata (see `CvwFile.pixel_size`)."
           },
           "fcs_file_path": {
             "anyOf": [
