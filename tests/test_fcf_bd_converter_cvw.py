@@ -1,8 +1,8 @@
 """Smoke tests of the converter with `.cvw` input, see `tests/local_data.py`.
 
-Each test converts a whole recording (~10000 events) and spot-checks a few ROIs
-against the vendor TIFFs. The mosaic machinery is shared with the TIFF input and
-tested in `test_fcf_bd_converter.py`.
+The main test converts a whole recording (~10000 events) and spot-checks a few
+ROIs against the vendor TIFFs. The mosaic machinery is shared with the TIFF input
+and tested in `test_fcf_bd_converter.py`.
 """
 
 from pathlib import Path
