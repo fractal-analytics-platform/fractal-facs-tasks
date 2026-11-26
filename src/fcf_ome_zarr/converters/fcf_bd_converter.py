@@ -34,11 +34,6 @@ from fcf_ome_zarr.converters.mosaic import MosaicLayout, PixelSize, TileSize
 from fcf_ome_zarr.readers.cvw import IMAGE_WIDTH, CvwFile
 from fcf_ome_zarr.utils import sanitize_string
 
-# The `.cvw` file has no usable pixel size. Use the one of the vendor TIFF exports:
-# 60 µm over the image width in x (see `_get_pixel_size`), and a y/x ratio of 5/6
-# from their resolution tags.
-CVW_PIXEL_SIZE = PixelSize(y=60 / IMAGE_WIDTH * 5 / 6, x=60 / IMAGE_WIDTH)
-
 
 @validate_call
 def fcf_bd_converter(
@@ -76,8 +71,8 @@ def fcf_bd_converter(
             (standard argument for Fractal tasks, managed by Fractal server).
         input_path: Path to the BD S8 or A8 recording to convert. Either a
             folder containing the exported TIFF files, or a `.cvw` waveform
-            file. With a `.cvw` file, the pixel size is the one of the vendor
-            TIFF exports.
+            file. With a `.cvw` file, the pixel size is computed from its
+            metadata (see `CvwFile.pixel_size`).
         fcs_file_path: Path to the FCS file of the same recording. If provided,
             all its events are saved as the "fcs_events" feature table, with
             the raw values of all parameters and an "event_index" column
@@ -295,9 +290,10 @@ def _open_cvw_file(
     cvw = CvwFile(cvw_path)
     # Image sizes come from the file index, without reconstructing any image
     n_rows = cvw.n_rows[:convert_first_n_events]
+    pixel_size_y, pixel_size_x = cvw.pixel_size
     layout = MosaicLayout(
         tile=TileSize(y=int(n_rows.max()), x=IMAGE_WIDTH),
-        pixel_size=CVW_PIXEL_SIZE,
+        pixel_size=PixelSize(y=pixel_size_y, x=pixel_size_x),
         n_tiles=len(n_rows),
         channel_labels=tuple(sanitize_string(name) for name in cvw.channel_names),
     )

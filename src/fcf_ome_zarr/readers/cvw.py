@@ -48,6 +48,9 @@ FFT_BIN_START: Final = 16
 FFT_BIN_STOP: Final = 120
 IMAGE_WIDTH: Final = FFT_BIN_STOP - FFT_BIN_START
 
+# Width of the beam path spanned by the IMAGE_WIDTH columns, in µm
+BEAM_WIDTH_UM: Final = 60.0
+
 # Scale from FFT amplitude of uint16 samples to image intensity
 INTENSITY_SCALE: Final = 65535 * 8
 
@@ -146,6 +149,26 @@ class CvwFile:
     def _laser(self) -> dict[str, Any]:
         """Calibration block of the (single) imaging laser."""
         return self.metadata["lasers"][0]
+
+    @cached_property
+    def pixel_size(self) -> tuple[float, float]:
+        """(y, x) pixel size in µm.
+
+        x is the beam width over the image width. The laser `pixelAspectRatio` is
+        the x pixel size over the distance the object travels during one window
+        of `WINDOW_SAMPLES`. Rows are `WINDOW_HOP` samples apart, so
+        `y = x * WINDOW_HOP / (WINDOW_SAMPLES * pixelAspectRatio)`. The ratio
+        depends on the flow velocity (nozzle), so it is read from each file.
+
+        Raises:
+            ValueError: If the laser metadata has no `pixelAspectRatio`.
+        """
+        aspect_ratio = self._laser.get("pixelAspectRatio")
+        if aspect_ratio is None:
+            raise ValueError(f"{self.path}: no pixelAspectRatio in the laser metadata")
+        x = BEAM_WIDTH_UM / IMAGE_WIDTH
+        y = x * WINDOW_HOP / (WINDOW_SAMPLES * aspect_ratio)
+        return y, x
 
     @cached_property
     def ref_phasors(self) -> np.ndarray:

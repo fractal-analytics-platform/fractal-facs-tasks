@@ -42,6 +42,8 @@ def test_parses_header_and_metadata(dataset: CvwDataset, cvw: CvwFile):
     assert len(cvw.event_numbers) == cvw.n_events
     assert cvw.channel_names == CHANNEL_NAMES
     assert (cvw.compensation_matrix is not None) == dataset.has_compensation
+    # Pixel size of the vendor TIFF exports
+    assert cvw.pixel_size == pytest.approx((60 / 104 / 1.2, 60 / 104))
 
 
 def test_reconstruction_matches_tiff(dataset: CvwDataset, cvw: CvwFile):
