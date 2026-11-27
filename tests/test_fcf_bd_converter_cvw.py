@@ -32,7 +32,7 @@ def test_cvw_input_matches_tiffs(tmp_path: Path, dataset: CvwDataset):
     result = fcf_bd_converter(
         input_path=str(dataset.cvw_path),
         zarr_dir=str(tmp_path),
-        advanced_parameters=AdvancedBDConverterParameters(fake_a_plate=False),
+        advanced_parameters=AdvancedBDConverterParameters(convert_to_uint16=False),
     )
     assert result is not None
     zarr_url = result["image_list_updates"][0]["zarr_url"]

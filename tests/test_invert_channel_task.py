@@ -59,7 +59,7 @@ def test_invert():
 
 
 def test_float32_and_uint16_match(convert_bd_s8: Callable[..., str]):
-    float_url = convert_bd_s8(zarr_name="float32")
+    float_url = convert_bd_s8(zarr_name="float32", convert_to_uint16=False)
     uint_url = convert_bd_s8(zarr_name="uint16", convert_to_uint16=True)
     invert_channel_task(zarr_url=float_url, channel_label=CHANNEL)
     invert_channel_task(zarr_url=uint_url, channel_label=CHANNEL)

@@ -35,7 +35,14 @@ AnyStorage = Annotated[Chunks | Shards, Field(discriminator="mode")]
 class AdvancedBDConverterParameters(BaseModel):
     """Advanced parameters of the BD converter."""
 
-    fake_a_plate: bool = True
+    convert_to_uint16: bool = True
+    """
+    Whether to store the image as uint16 instead of float32. Values are clipped to
+    [0, 8] and scaled linearly to the full uint16 range.
+    We recommend to keep this option selected, since many processing tasks and
+    display software may not correctly support the original data type and range.
+    """
+    fake_a_plate: bool = False
     """
     Whether to create a fake plate structure with a single well "A01" containing the
     mosaic image. This is useful to use some tools that need plates (e.g. Fractal
@@ -46,11 +53,6 @@ class AdvancedBDConverterParameters(BaseModel):
     Whether to add a singleton Z dimension to the OME-Zarr. This is useful to use some
     of the tools (like the Fractal feature explorer) that require Z singleton
     dimensions.
-    """
-    convert_to_uint16: bool = False
-    """
-    Whether to store the image as uint16 instead of float32. Values are clipped to
-    [0, 8] and scaled linearly to the full uint16 range [0, 65535].
     """
     storage: AnyStorage = Field(default_factory=Chunks)
     """

@@ -240,8 +240,14 @@
           "AdvancedBDConverterParameters": {
             "description": "Advanced parameters of the BD converter.",
             "properties": {
-              "fake_a_plate": {
+              "convert_to_uint16": {
                 "default": true,
+                "description": "Whether to store the image as uint16 instead of float32. Values are clipped to\n[0, 8] and scaled linearly to the full uint16 range.\nWe recommend to keep this option selected, since many processing tasks and\ndisplay software may not correctly support the original data type and range.",
+                "title": "Convert To Uint16",
+                "type": "boolean"
+              },
+              "fake_a_plate": {
+                "default": false,
                 "description": "Whether to create a fake plate structure with a single well \"A01\" containing the\nmosaic image. This is useful to use some tools that need plates (e.g. Fractal\nfeature explorer).",
                 "title": "Fake A Plate",
                 "type": "boolean"
@@ -250,12 +256,6 @@
                 "default": false,
                 "description": "Whether to add a singleton Z dimension to the OME-Zarr. This is useful to use some\nof the tools (like the Fractal feature explorer) that require Z singleton\ndimensions.",
                 "title": "Add Z Singleton",
-                "type": "boolean"
-              },
-              "convert_to_uint16": {
-                "default": false,
-                "description": "Whether to store the image as uint16 instead of float32. Values are clipped to\n[0, 8] and scaled linearly to the full uint16 range [0, 65535].",
-                "title": "Convert To Uint16",
                 "type": "boolean"
               },
               "storage": {
@@ -387,9 +387,9 @@
           "advanced_parameters": {
             "$ref": "#/$defs/AdvancedBDConverterParameters",
             "default": {
-              "fake_a_plate": true,
+              "convert_to_uint16": true,
+              "fake_a_plate": false,
               "add_z_singleton": false,
-              "convert_to_uint16": false,
               "storage": {
                 "mode": "Chunks",
                 "target_chunk_size": 512

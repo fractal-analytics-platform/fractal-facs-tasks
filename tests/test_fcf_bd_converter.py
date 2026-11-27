@@ -37,9 +37,7 @@ def run_converter(
         zarr_dir=str(tmp_path),
         fcs_file_path=fcs_file_path,
         zarr_name=zarr_name,
-        advanced_parameters=AdvancedBDConverterParameters(
-            fake_a_plate=False, **advanced
-        ),
+        advanced_parameters=AdvancedBDConverterParameters(**advanced),
     )
     assert result is not None
     zarr_url = Path(result["image_list_updates"][0]["zarr_url"])
@@ -63,7 +61,7 @@ def test_converter_writes_mosaic_image(
     else:
         assert image.axes == ("c", "y", "x")
         assert image.shape == (6, *example_bd_dataset.mosaic_size)
-    assert image.dtype == "float32"
+    assert image.dtype == "uint16"
     assert image.pixel_size.y == pytest.approx(60 / 104 / 1.2)
     assert image.pixel_size.x == pytest.approx(60 / 104)
 
@@ -119,7 +117,10 @@ def test_fov_rois_match_source_tiff_pages(
     tmp_path: Path, example_bd_dataset: ExampleBDDataset, add_z_singleton: bool
 ):
     zarr_url = run_converter(
-        tmp_path, example_bd_dataset.tiff_dir, add_z_singleton=add_z_singleton
+        tmp_path,
+        example_bd_dataset.tiff_dir,
+        add_z_singleton=add_z_singleton,
+        convert_to_uint16=False,
     )
     ome_zarr = open_ome_zarr_container(zarr_url)
     image = ome_zarr.get_image()
