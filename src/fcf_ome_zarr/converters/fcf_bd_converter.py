@@ -52,15 +52,12 @@ def fcf_bd_converter(
 ) -> dict | None:
     """Convert BD S8 or A8 images into a single mosaic OME-Zarr image.
 
-    The images are read either from a folder of TIFF files, extracted with the
-    standalone BD image extractor or with the FlowJo plugin, or reconstructed
+    The images are read either from a folder of TIFF files, or reconstructed
     directly from the raw waveforms of a `.cvw` file.
 
     Each image is placed in its own tile of the mosaic and recorded as a ROI in
-    the "FOV_ROI_table". Channel labels are read from the TIFF PageName tags or
-    from the `.cvw` metadata, with special characters (e.g. whitespace, "/",
-    parentheses) replaced by underscores. If an FCS file is given, its raw
-    event data is saved as the "fcs_events" feature table.
+    the "FOV_ROI_table". If an FCS file is given, its raw event data is saved as
+    the "fcs_events" feature table.
 
     Args:
         zarr_dir: path of the directory where the new OME-Zarrs will be
@@ -70,25 +67,16 @@ def fcf_bd_converter(
             folder containing the exported TIFF files, or a `.cvw` waveform
             file.
         fcs_file_path: Path to the FCS file of the same recording. If provided,
-            all its events are saved as the "fcs_events" feature table, with
-            the raw values of all parameters and an "event_index" column
-            matching the names of the ROIs in "FOV_ROI_table". Values are
-            stored as float32, so integer parameters show up as meaningless
-            floats until reinterpreted (e.g. with `.view(np.uint32)`).
+            all its events are saved as the "fcs_events" feature table.
             All its TEXT keywords are saved under "fcs_text" in a
-            "fcs_metadata.json" file next to the image "zarr.json". Keywords are
-            lowercased and without the leading "$" (as read by flowio);
-            values are the unchanged strings.
+            "fcs_metadata.json" file next to the image "zarr.json".
         zarr_name: Name of the output OME-Zarr, without the ".ome.zarr"
             extension. Used for the plate if `fake_a_plate` is True, otherwise
             for the image. If None, the name of the TIFF folder or of the
-            `.cvw` file (without extension) is used, with special characters
-            (e.g. whitespace, "#", parentheses) replaced by underscores.
-        overwrite (bool): Whether to overwrite an existing OME-Zarr image (and
-            fake plate, if `fake_a_plate` is True). Defaults to True.
-        advanced_parameters: Output layout and format (fake plate, Z singleton,
-            uint16 conversion, chunks or shards), and conversion of only the
-            first N events for testing.
+            `.cvw` file is used, with special characters replaced by underscores.
+        overwrite (bool): Whether to overwrite an existing OME-Zarr image.
+            Defaults to True.
+        advanced_parameters: Advanced processing and storage parameters.
     """
     fake_a_plate = advanced_parameters.fake_a_plate
     add_z_singleton = advanced_parameters.add_z_singleton

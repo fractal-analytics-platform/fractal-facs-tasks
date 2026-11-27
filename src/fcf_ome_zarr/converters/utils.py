@@ -37,8 +37,8 @@ class AdvancedBDConverterParameters(BaseModel):
 
     convert_to_uint16: bool = True
     """
-    Whether to store the image as uint16 instead of float32. Values are clipped to
-    [0, 8] and scaled linearly to the full uint16 range.
+    Whether to store the image as uint16 instead of float32 (original data type).
+    Values are clipped to [0, 8] and scaled linearly to the full uint16 range.
     We recommend to keep this option selected, since many processing tasks and
     display software may not correctly support the original data type and range.
     """

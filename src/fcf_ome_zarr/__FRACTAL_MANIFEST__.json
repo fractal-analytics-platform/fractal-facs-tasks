@@ -242,7 +242,7 @@
             "properties": {
               "convert_to_uint16": {
                 "default": true,
-                "description": "Whether to store the image as uint16 instead of float32. Values are clipped to\n[0, 8] and scaled linearly to the full uint16 range.\nWe recommend to keep this option selected, since many processing tasks and\ndisplay software may not correctly support the original data type and range.",
+                "description": "Whether to store the image as uint16 instead of float32 (original data type).\nValues are clipped to [0, 8] and scaled linearly to the full uint16 range.\nWe recommend to keep this option selected, since many processing tasks and\ndisplay software may not correctly support the original data type and range.",
                 "title": "Convert To Uint16",
                 "type": "boolean"
               },
@@ -363,7 +363,7 @@
             ],
             "default": null,
             "title": "Fcs File Path",
-            "description": "Path to the FCS file of the same recording. If provided, all its events are saved as the \"fcs_events\" feature table, with the raw values of all parameters and an \"event_index\" column matching the names of the ROIs in \"FOV_ROI_table\". Values are stored as float32, so integer parameters show up as meaningless floats until reinterpreted (e.g. with `.view(np.uint32)`). All its TEXT keywords are saved under \"fcs_text\" in a \"fcs_metadata.json\" file next to the image \"zarr.json\". Keywords are lowercased and without the leading \"$\" (as read by flowio); values are the unchanged strings."
+            "description": "Path to the FCS file of the same recording. If provided, all its events are saved as the \"fcs_events\" feature table. All its TEXT keywords are saved under \"fcs_text\" in a \"fcs_metadata.json\" file next to the image \"zarr.json\"."
           },
           "zarr_name": {
             "anyOf": [
@@ -376,13 +376,13 @@
             ],
             "default": null,
             "title": "Zarr Name",
-            "description": "Name of the output OME-Zarr, without the \".ome.zarr\" extension. Used for the plate if `fake_a_plate` is True, otherwise for the image. If None, the name of the TIFF folder or of the `.cvw` file (without extension) is used, with special characters (e.g. whitespace, \"#\", parentheses) replaced by underscores."
+            "description": "Name of the output OME-Zarr, without the \".ome.zarr\" extension. Used for the plate if `fake_a_plate` is True, otherwise for the image. If None, the name of the TIFF folder or of the `.cvw` file is used, with special characters replaced by underscores."
           },
           "overwrite": {
             "default": true,
             "title": "Overwrite",
             "type": "boolean",
-            "description": "Whether to overwrite an existing OME-Zarr image (and fake plate, if `fake_a_plate` is True). Defaults to True."
+            "description": "Whether to overwrite an existing OME-Zarr image. Defaults to True."
           },
           "advanced_parameters": {
             "$ref": "#/$defs/AdvancedBDConverterParameters",
@@ -397,7 +397,7 @@
               "convert_first_n_events": null
             },
             "title": "Advanced Parameters",
-            "description": "Output layout and format (fake plate, Z singleton, uint16 conversion, chunks or shards), and conversion of only the first N events for testing."
+            "description": "Advanced processing and storage parameters."
           }
         },
         "required": [
