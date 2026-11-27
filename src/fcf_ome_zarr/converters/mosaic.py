@@ -7,10 +7,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import NamedTuple, Self
 
-import numpy as np
 import tifffile
 from ngio import RoiSlice
-from numpy.typing import DTypeLike
 
 from fcf_ome_zarr.utils import sanitize_string
 
@@ -112,17 +110,6 @@ class MosaicLayout:
         """Get (y, x) origin of a tile at given row and col indexer"""
         return row * self.tile.y, col * self.tile.x
 
-    def get_tile_slice(
-        self, row: int, col: int, add_z_singleton: bool = False
-    ) -> tuple[slice | int, ...]:
-        """Get slice for indexing tile at given row and col indexer"""
-        y0, x0 = self._get_tile_origin(row=row, col=col)
-        if add_z_singleton:
-            indexer = np.s_[:, 0, y0 : y0 + self.tile.y, x0 : x0 + self.tile.x]
-        else:
-            indexer = np.s_[:, y0 : y0 + self.tile.y, x0 : x0 + self.tile.x]
-        return indexer
-
     def get_roi_slices(
         self, row: int, col: int, img_shape: tuple[int, int]
     ) -> tuple[RoiSlice, ...]:
@@ -191,13 +178,3 @@ def _get_channel_labels(tif: tifffile.TiffFile) -> tuple[str, ...]:
         raw_labels[label] = raw_label
         labels.append(label)
     return tuple(labels)
-
-
-def pad_to_shape(
-    img: np.ndarray, target_shape: tuple[int, int], dtype: DTypeLike = np.float32
-) -> np.ndarray:
-    """Pad a 3D image (c, y, x) to the target shape (y, x) with zeros."""
-    c, y, x = img.shape
-    padded = np.zeros((c, *target_shape), dtype=dtype)
-    padded[:, :y, :x] = img
-    return padded

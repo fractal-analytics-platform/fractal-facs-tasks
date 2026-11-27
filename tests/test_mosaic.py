@@ -1,14 +1,12 @@
 from collections.abc import Callable
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 from fcf_ome_zarr.converters.mosaic import (
     MosaicLayout,
     PixelSize,
     TileSize,
-    pad_to_shape,
 )
 
 
@@ -72,24 +70,6 @@ def test_closest_tile_multiple(
 def test_size_is_grid_shape_times_tile_size():
     layout = make_layout(n_tiles=7, tile=(10, 20))
     assert layout.size == (layout.n_rows * 10, layout.n_cols * 20)
-
-
-@pytest.mark.parametrize("add_z_singleton", [True, False])
-def test_tile_slices_stay_in_bounds_without_overlap(add_z_singleton: bool):
-    layout = make_layout(n_tiles=7, tile=(10, 20), n_channels=3)
-    shape = (3, 1, *layout.size) if add_z_singleton else (3, *layout.size)
-    hits = np.zeros(shape, dtype=int)
-
-    for i in range(layout.n_tiles):
-        row, col = divmod(i, layout.n_cols)
-        tile_slice = layout.get_tile_slice(
-            row=row, col=col, add_z_singleton=add_z_singleton
-        )
-        assert hits[tile_slice].shape == (3, 10, 20)
-        hits[tile_slice] += 1
-
-    assert hits.max() == 1
-    assert hits.sum() == layout.n_tiles * 3 * 10 * 20
 
 
 def test_from_paths_reads_tile_size_and_metadata(
@@ -177,18 +157,3 @@ def test_from_paths_with_colliding_page_names_raises(
     ]
     with pytest.raises(ValueError, match="both sanitized to 'SSC_Imaging'"):
         MosaicLayout.from_paths(tif_paths)
-
-
-def test_pad_to_shape_keeps_image_in_top_left_corner():
-    img = np.ones((2, 3, 4), dtype=np.float32)
-    padded = pad_to_shape(img, target_shape=(5, 6))
-
-    assert padded.shape == (2, 5, 6)
-    assert np.array_equal(padded[:, :3, :4], img)
-    assert padded.sum() == img.sum()
-
-
-def test_pad_to_shape_with_image_larger_than_target_raises():
-    img = np.ones((2, 3, 4), dtype=np.float32)
-    with pytest.raises(ValueError):
-        pad_to_shape(img, target_shape=(2, 2))

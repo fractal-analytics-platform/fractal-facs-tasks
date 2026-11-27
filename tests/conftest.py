@@ -83,7 +83,7 @@ def convert_bd_s8(tmp_path: Path) -> Callable[..., str]:
 
     def _convert(**kwargs) -> str:
         result = fcf_bd_converter(
-            tiff_folder_path=str(BD_S8_TIFF_DIR),
+            input_path=str(BD_S8_TIFF_DIR),
             zarr_dir=str(tmp_path),
             fake_a_plate=False,
             **kwargs,

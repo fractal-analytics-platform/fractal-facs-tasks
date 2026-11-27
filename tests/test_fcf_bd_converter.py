@@ -18,7 +18,7 @@ from tests.conftest import ExampleBDDataset
 def run_converter(tmp_path: Path, tiff_dir: Path, **kwargs) -> Path:
     """Run the converter without a plate and return the mosaic zarr url."""
     result = fcf_bd_converter(
-        tiff_folder_path=str(tiff_dir),
+        input_path=str(tiff_dir),
         zarr_dir=str(tmp_path),
         fake_a_plate=False,
         **kwargs,
@@ -159,7 +159,7 @@ def test_converter_writes_image_inside_fake_plate(
 ):
     tiff_dir = example_bd_dataset.tiff_dir
     result = fcf_bd_converter(
-        tiff_folder_path=str(tiff_dir),
+        input_path=str(tiff_dir),
         zarr_dir=str(tmp_path),
         fake_a_plate=True,
     )
@@ -218,12 +218,12 @@ def test_converter_writes_channel_metadata(
         assert data[c].min() <= window.start < window.end <= data[c].max()
 
 
-def test_convert_first_x_tiffs_skips_remaining_files(
+def test_convert_first_n_events_skips_remaining_tiffs(
     tmp_path: Path, mixed_tiff_dir: Path
 ):
     # The mismatching TIFF sorts last, converting it would raise
     # Update this if the example dataset changes
-    zarr_url = run_converter(tmp_path, mixed_tiff_dir, convert_first_x_tiffs=4)
+    zarr_url = run_converter(tmp_path, mixed_tiff_dir, convert_first_n_events=4)
     image = open_ome_zarr_container(zarr_url).get_image()
 
     # 4 tiles of (73, 104) pixels in a 2 x 2 grid
@@ -232,7 +232,15 @@ def test_convert_first_x_tiffs_skips_remaining_files(
 
 def test_mixed_folder_raises(tmp_path: Path, mixed_tiff_dir: Path):
     with pytest.raises(ValueError, match="mismatching channels"):
-        fcf_bd_converter(tiff_folder_path=str(mixed_tiff_dir), zarr_dir=str(tmp_path))
+        fcf_bd_converter(input_path=str(mixed_tiff_dir), zarr_dir=str(tmp_path))
+
+
+def test_input_neither_tiff_folder_nor_cvw_raises(tmp_path: Path):
+    input_path = tmp_path / "recording.fcs"
+    input_path.touch()
+
+    with pytest.raises(ValueError, match="neither a folder of TIFF files nor"):
+        fcf_bd_converter(input_path=str(input_path), zarr_dir=str(tmp_path))
 
 
 def test_single_channel_tiffs_raise(tmp_path: Path, make_tiff: Callable[..., Path]):
