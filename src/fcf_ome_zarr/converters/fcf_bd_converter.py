@@ -71,8 +71,7 @@ def fcf_bd_converter(
             (standard argument for Fractal tasks, managed by Fractal server).
         input_path: Path to the BD S8 or A8 recording to convert. Either a
             folder containing the exported TIFF files, or a `.cvw` waveform
-            file. With a `.cvw` file, the pixel size is computed from its
-            metadata (see `CvwFile.pixel_size`).
+            file.
         fcs_file_path: Path to the FCS file of the same recording. If provided,
             all its events are saved as the "fcs_events" feature table, with
             the raw values of all parameters and an "event_index" column
