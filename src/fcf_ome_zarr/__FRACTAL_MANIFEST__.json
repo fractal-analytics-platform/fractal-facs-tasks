@@ -236,6 +236,110 @@
         "mem": 4000
       },
       "args_schema_non_parallel": {
+        "$defs": {
+          "AdvancedBDConverterParameters": {
+            "description": "Advanced parameters of the BD converter.",
+            "properties": {
+              "fake_a_plate": {
+                "default": true,
+                "description": "Whether to create a fake plate structure with a single well \"A01\" containing the\nmosaic image. This is useful to use some tools that need plates (e.g. Fractal\nfeature explorer).",
+                "title": "Fake A Plate",
+                "type": "boolean"
+              },
+              "add_z_singleton": {
+                "default": false,
+                "description": "Whether to add a singleton Z dimension to the OME-Zarr. This is useful to use some\nof the tools (like the Fractal feature explorer) that require Z singleton\ndimensions.",
+                "title": "Add Z Singleton",
+                "type": "boolean"
+              },
+              "convert_to_uint16": {
+                "default": false,
+                "description": "Whether to store the image as uint16 instead of float32. Values are clipped to\n[0, 8] and scaled linearly to the full uint16 range [0, 65535].",
+                "title": "Convert To Uint16",
+                "type": "boolean"
+              },
+              "storage": {
+                "default": {
+                  "mode": "Chunks",
+                  "target_chunk_size": 512
+                },
+                "description": "How to store the image: in chunks without sharding, or in shards with one mosaic\ntile per chunk. Chunks and shards always hold all channels and a whole number of\ntiles.",
+                "discriminator": {
+                  "mapping": {
+                    "Chunks": "#/$defs/Chunks",
+                    "Shards": "#/$defs/Shards"
+                  },
+                  "propertyName": "mode"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/Chunks"
+                  },
+                  {
+                    "$ref": "#/$defs/Shards"
+                  }
+                ],
+                "title": "Storage"
+              },
+              "convert_first_n_events": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "If provided, only the first N events are converted: the first N TIFF files of the\nfolder, or the first N events of the `.cvw` file. This is useful for testing with\nfewer events. If None, all events are converted.",
+                "title": "Convert First N Events"
+              }
+            },
+            "title": "AdvancedBDConverterParameters",
+            "type": "object"
+          },
+          "Chunks": {
+            "description": "Store the image in chunks, without sharding.",
+            "properties": {
+              "mode": {
+                "const": "Chunks",
+                "default": "Chunks",
+                "description": "Store the image in chunks, without sharding.",
+                "title": "Mode",
+                "type": "string"
+              },
+              "target_chunk_size": {
+                "default": 512,
+                "description": "Target size in pixels of the chunks along y and x. Rounded to the closest whole\nnumber of tiles (at least one).",
+                "title": "Target Chunk Size",
+                "type": "integer"
+              }
+            },
+            "title": "Chunks",
+            "type": "object"
+          },
+          "Shards": {
+            "description": "Store the image in shards, with one mosaic tile per chunk.",
+            "properties": {
+              "mode": {
+                "const": "Shards",
+                "default": "Shards",
+                "description": "Store the image in shards, with one mosaic tile per chunk.",
+                "title": "Mode",
+                "type": "string"
+              },
+              "target_shard_size": {
+                "default": 2048,
+                "description": "Target size in pixels of the shards along y and x. Rounded to the closest whole\nnumber of tiles (at least one).",
+                "title": "Target Shard Size",
+                "type": "integer"
+              }
+            },
+            "title": "Shards",
+            "type": "object"
+          }
+        },
         "additionalProperties": false,
         "properties": {
           "zarr_dir": {
@@ -274,61 +378,26 @@
             "title": "Zarr Name",
             "description": "Name of the output OME-Zarr, without the \".ome.zarr\" extension. Used for the plate if `fake_a_plate` is True, otherwise for the image. If None, the name of the TIFF folder or of the `.cvw` file (without extension) is used, with special characters (e.g. whitespace, \"#\", parentheses) replaced by underscores."
           },
-          "fake_a_plate": {
-            "default": true,
-            "title": "Fake A Plate",
-            "type": "boolean",
-            "description": "Whether to create a fake plate structure with a single well \"A01\" containing the mosaic image. This is useful to use some tools that need plates (e.g. Fractal feature explorer). Defaults to True."
-          },
-          "add_z_singleton": {
-            "default": false,
-            "title": "Add Z Singleton",
-            "type": "boolean",
-            "description": "Whether to add a singleton Z dimension to the OME-Zarr. This is useful to use some of the tools (like the Fractal feature explorer) that require Z singleton dimensions. Defaults to False."
-          },
-          "use_sharding": {
-            "default": false,
-            "title": "Use Sharding",
-            "type": "boolean",
-            "description": "Whether to store the image in shards. If True, each chunk holds a single mosaic tile and shards are about `target_shard_size` pixels per side. If False, there is no sharding and chunks are about `target_chunk_size` pixels per side. Chunks and shards always hold all channels and a whole number of tiles. Defaults to False."
-          },
-          "convert_to_uint16": {
-            "default": false,
-            "title": "Convert To Uint16",
-            "type": "boolean",
-            "description": "Whether to store the image as uint16 instead of float32. Values are clipped to [0, 8] and scaled linearly to the full uint16 range [0, 65535]. Defaults to False."
-          },
-          "target_chunk_size": {
-            "default": 512,
-            "title": "Target Chunk Size",
-            "type": "integer",
-            "description": "Target size in pixels of the chunks along y and x, used only without sharding. Rounded to the closest whole number of tiles (at least one). This parameter is ignored if `use_sharding` is True. Defaults to 512."
-          },
-          "target_shard_size": {
-            "default": 2048,
-            "title": "Target Shard Size",
-            "type": "integer",
-            "description": "Target size in pixels of the shards along y and x, used only with sharding. Rounded to the closest whole number of tiles (at least one). This parameter is ignored if `use_sharding` is False. Defaults to 2048."
-          },
-          "convert_first_n_events": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Convert First N Events",
-            "description": "If provided, only the first N events are converted: the first N TIFF files of the folder, or the first N events of the `.cvw` file. This is useful for testing with fewer events. If None, all events are converted."
-          },
           "overwrite": {
             "default": true,
             "title": "Overwrite",
             "type": "boolean",
             "description": "Whether to overwrite an existing OME-Zarr image (and fake plate, if `fake_a_plate` is True). Defaults to True."
+          },
+          "advanced_parameters": {
+            "$ref": "#/$defs/AdvancedBDConverterParameters",
+            "default": {
+              "fake_a_plate": true,
+              "add_z_singleton": false,
+              "convert_to_uint16": false,
+              "storage": {
+                "mode": "Chunks",
+                "target_chunk_size": 512
+              },
+              "convert_first_n_events": null
+            },
+            "title": "Advanced Parameters",
+            "description": "Output layout and format (fake plate, Z singleton, uint16 conversion, chunks or shards), and conversion of only the first N events for testing."
           }
         },
         "required": [

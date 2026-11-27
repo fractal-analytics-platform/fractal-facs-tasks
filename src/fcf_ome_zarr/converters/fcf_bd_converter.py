@@ -16,7 +16,7 @@ import tifffile
 from ngio import Roi
 from ngio.tables import FeatureTable, RoiTable
 from ngio.tables.v1._feature_table import FeatureTableMeta
-from pydantic import PositiveInt, validate_call
+from pydantic import Field, validate_call
 from zarr import Array
 from zarr.storage import LocalStore
 
@@ -31,6 +31,7 @@ from fcf_ome_zarr.constants import (
     UINT16_MAX_INTENSITY,
 )
 from fcf_ome_zarr.converters.mosaic import MosaicLayout, PixelSize, TileSize
+from fcf_ome_zarr.converters.utils import AdvancedBDConverterParameters, Shards
 from fcf_ome_zarr.readers.cvw import IMAGE_WIDTH, CvwFile
 from fcf_ome_zarr.utils import sanitize_string
 
@@ -44,14 +45,10 @@ def fcf_bd_converter(
     input_path: str,
     fcs_file_path: Optional[str] = None,
     zarr_name: Optional[str] = None,
-    fake_a_plate: bool = True,
-    add_z_singleton: bool = False,
-    use_sharding: bool = False,
-    convert_to_uint16: bool = False,
-    target_chunk_size: int = 512,
-    target_shard_size: int = 2048,
-    convert_first_n_events: Optional[PositiveInt] = None,
     overwrite: bool = True,
+    advanced_parameters: AdvancedBDConverterParameters = Field(  # noqa: B008
+        default_factory=AdvancedBDConverterParameters
+    ),
 ) -> dict | None:
     """Convert BD S8 or A8 images into a single mosaic OME-Zarr image.
 
@@ -87,40 +84,19 @@ def fcf_bd_converter(
             for the image. If None, the name of the TIFF folder or of the
             `.cvw` file (without extension) is used, with special characters
             (e.g. whitespace, "#", parentheses) replaced by underscores.
-        fake_a_plate: Whether to create a fake plate structure with a single
-            well "A01" containing the mosaic image. This is useful to use some
-            tools that need plates (e.g. Fractal feature explorer).
-            Defaults to True.
-        add_z_singleton: Whether to add a singleton Z dimension to the OME-Zarr.
-            This is useful to use some of the tools (like the Fractal feature
-            explorer) that require Z singleton dimensions.
-            Defaults to False.
-        use_sharding: Whether to store the image in shards. If True, each chunk
-            holds a single mosaic tile and shards are about
-            `target_shard_size` pixels per side. If False, there is no sharding
-            and chunks are about `target_chunk_size` pixels per side. Chunks
-            and shards always hold all channels and a whole number of tiles.
-            Defaults to False.
-        convert_to_uint16: Whether to store the image as uint16 instead of
-            float32. Values are clipped to [0, 8] and scaled linearly to the
-            full uint16 range [0, 65535]. Defaults to False.
-        target_chunk_size: Target size in pixels of the chunks along y and x,
-            used only without sharding. Rounded to the closest whole number of
-            tiles (at least one). This parameter is ignored if `use_sharding` is True.
-            Defaults to 512.
-        target_shard_size: Target size in pixels of the shards along y and x,
-            used only with sharding. Rounded to the closest whole number of
-            tiles (at least one). This parameter is ignored if `use_sharding` is False.
-            Defaults to 2048.
-        convert_first_n_events: If provided, only the first N events are
-            converted: the first N TIFF files of the folder, or the first N
-            events of the `.cvw` file. This is useful for testing with fewer
-            events. If None, all events are converted.
         overwrite (bool): Whether to overwrite an existing OME-Zarr image (and
             fake plate, if `fake_a_plate` is True). Defaults to True.
+        advanced_parameters: Output layout and format (fake plate, Z singleton,
+            uint16 conversion, chunks or shards), and conversion of only the
+            first N events for testing.
     """
+    fake_a_plate = advanced_parameters.fake_a_plate
+    add_z_singleton = advanced_parameters.add_z_singleton
+    convert_to_uint16 = advanced_parameters.convert_to_uint16
+    storage = advanced_parameters.storage
+
     logging.info(f"Processing {input_path=}")
-    source = _open_source(Path(input_path), convert_first_n_events)
+    source = _open_source(Path(input_path), advanced_parameters.convert_first_n_events)
     layout = source.layout
 
     if zarr_name is None:
@@ -150,11 +126,11 @@ def fcf_bd_converter(
     logging.info(f"Total image size: {layout.size.y} y x {layout.size.x} x")
 
     # Chunks and shards hold all channels and a whole number of tiles
-    if use_sharding:
+    if isinstance(storage, Shards):
         chunks_yx: tuple[int, int] = layout.tile
-        shards_yx = layout.closest_tile_multiple(target_shard_size)
+        shards_yx = layout.closest_tile_multiple(storage.target_shard_size)
     else:
-        chunks_yx = layout.closest_tile_multiple(target_chunk_size)
+        chunks_yx = layout.closest_tile_multiple(storage.target_chunk_size)
         shards_yx = None
     z_dims = (1,) if add_z_singleton else ()
     chunks = (layout.n_channels, *z_dims, *chunks_yx)

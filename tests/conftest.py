@@ -8,6 +8,7 @@ import pytest
 import tifffile
 
 from fcf_ome_zarr.converters.fcf_bd_converter import fcf_bd_converter
+from fcf_ome_zarr.converters.utils import AdvancedBDConverterParameters
 
 BD_S8_DIR = Path(__file__).parent / "example_data" / "BD_S8"
 BD_A8_DIR = Path(__file__).parent / "example_data" / "BD_A8"
@@ -78,15 +79,21 @@ def bd_s8_fcs_path() -> Path:
 def convert_bd_s8(tmp_path: Path) -> Callable[..., str]:
     """Factory converting the S8 example TIFFs without a plate.
 
-    Keyword arguments are passed to the converter. Returns the zarr url.
+    Keyword arguments other than `fcs_file_path` and `zarr_name` are advanced
+    parameters. Returns the zarr url.
     """
 
-    def _convert(**kwargs) -> str:
+    def _convert(
+        *, fcs_file_path: str | None = None, zarr_name: str | None = None, **advanced
+    ) -> str:
         result = fcf_bd_converter(
             input_path=str(BD_S8_TIFF_DIR),
             zarr_dir=str(tmp_path),
-            fake_a_plate=False,
-            **kwargs,
+            fcs_file_path=fcs_file_path,
+            zarr_name=zarr_name,
+            advanced_parameters=AdvancedBDConverterParameters(
+                fake_a_plate=False, **advanced
+            ),
         )
         assert result is not None
         return result["image_list_updates"][0]["zarr_url"]

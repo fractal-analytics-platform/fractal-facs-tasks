@@ -11,17 +11,35 @@ from ngio import open_ome_zarr_container, open_ome_zarr_plate
 
 from fcf_ome_zarr.constants import FCS_METADATA_FILE
 from fcf_ome_zarr.converters.fcf_bd_converter import fcf_bd_converter
+from fcf_ome_zarr.converters.utils import (
+    AdvancedBDConverterParameters,
+    Chunks,
+    Shards,
+)
 from fcf_ome_zarr.utils import sanitize_string
 from tests.conftest import ExampleBDDataset
 
 
-def run_converter(tmp_path: Path, tiff_dir: Path, **kwargs) -> Path:
-    """Run the converter without a plate and return the mosaic zarr url."""
+def run_converter(
+    tmp_path: Path,
+    tiff_dir: Path,
+    *,
+    fcs_file_path: str | None = None,
+    zarr_name: str | None = None,
+    **advanced,
+) -> Path:
+    """Run the converter without a plate and return the mosaic zarr url.
+
+    Other keyword arguments are advanced parameters.
+    """
     result = fcf_bd_converter(
         input_path=str(tiff_dir),
         zarr_dir=str(tmp_path),
-        fake_a_plate=False,
-        **kwargs,
+        fcs_file_path=fcs_file_path,
+        zarr_name=zarr_name,
+        advanced_parameters=AdvancedBDConverterParameters(
+            fake_a_plate=False, **advanced
+        ),
     )
     assert result is not None
     zarr_url = Path(result["image_list_updates"][0]["zarr_url"])
@@ -70,14 +88,12 @@ def test_without_sharding_chunks_are_closest_whole_tiles(
     zarr_url = run_converter(
         tmp_path,
         large_tiff_dir,
-        use_sharding=False,
-        target_chunk_size=1000,
-        target_shard_size=1200,
+        storage=Chunks(target_chunk_size=1000),
     )
     array = open_ome_zarr_container(zarr_url).get_image().zarr_array
 
     # 1000 px is 5 x 3.3 tiles of 200 x 300 px, rounded to 5 x 3 tiles.
-    # All channels are in the same chunk. The shard target is ignored.
+    # All channels are in the same chunk.
     assert array.chunks == (2, 1000, 900)
     assert array.shards is None
 
@@ -86,14 +102,12 @@ def test_with_sharding_chunks_are_one_tile(tmp_path: Path, large_tiff_dir: Path)
     zarr_url = run_converter(
         tmp_path,
         large_tiff_dir,
-        use_sharding=True,
-        target_chunk_size=1000,
-        target_shard_size=1200,
+        storage=Shards(target_shard_size=1200),
         add_z_singleton=True,
     )
     array = open_ome_zarr_container(zarr_url).get_image().zarr_array
 
-    # Chunks are a single tile, whatever the chunk target.
+    # Chunks are a single tile.
     # 1200 px is exactly 6 x 4 tiles of 200 x 300 px.
     # All channels are in the same chunk and shard.
     assert array.chunks == (2, 1, 200, 300)
@@ -161,7 +175,7 @@ def test_converter_writes_image_inside_fake_plate(
     result = fcf_bd_converter(
         input_path=str(tiff_dir),
         zarr_dir=str(tmp_path),
-        fake_a_plate=True,
+        advanced_parameters=AdvancedBDConverterParameters(fake_a_plate=True),
     )
     assert result is not None
     # The plate is named after the TIFF folder by default

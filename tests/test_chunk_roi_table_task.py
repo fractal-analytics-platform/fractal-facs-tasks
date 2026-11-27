@@ -4,6 +4,7 @@ import pytest
 from ngio import open_ome_zarr_container
 
 from fcf_ome_zarr.chunk_roi_table_task import chunk_roi_table_task
+from fcf_ome_zarr.converters.utils import Chunks, Shards
 
 
 def _roi_boxes_px(zarr_url: str, table_name: str) -> list[tuple[int, int, int, int]]:
@@ -24,7 +25,7 @@ def _roi_boxes_px(zarr_url: str, table_name: str) -> list[tuple[int, int, int, i
     [
         # Chunks of one tile
         (
-            {"target_chunk_size": 1},
+            {"storage": Chunks(target_chunk_size=1)},
             1,
             "chunk_ROI_table_1x1",
             [
@@ -36,14 +37,14 @@ def _roi_boxes_px(zarr_url: str, table_name: str) -> list[tuple[int, int, int, i
         ),
         # Shards of 2 x 1 tiles are used instead of the one tile chunks
         (
-            {"use_sharding": True, "target_shard_size": 150},
+            {"storage": Shards(target_shard_size=150)},
             1,
             "shard_ROI_table_1x1",
             [(0, 146, 0, 104), (0, 146, 104, 208)],
         ),
         # 2 x 2 shards, clipped to the image
         (
-            {"use_sharding": True, "target_shard_size": 150},
+            {"storage": Shards(target_shard_size=150)},
             2,
             "shard_ROI_table_2x2",
             [(0, 146, 0, 208)],

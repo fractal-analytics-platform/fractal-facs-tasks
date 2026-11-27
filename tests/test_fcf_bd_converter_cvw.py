@@ -11,6 +11,7 @@ import pytest
 from ngio import open_ome_zarr_container
 
 from fcf_ome_zarr.converters.fcf_bd_converter import fcf_bd_converter
+from fcf_ome_zarr.converters.utils import AdvancedBDConverterParameters
 from fcf_ome_zarr.readers.cvw import CvwFile
 from fcf_ome_zarr.utils import sanitize_string
 from tests.local_data import (
@@ -29,7 +30,9 @@ pytestmark = pytest.mark.local_data
 def test_cvw_input_matches_tiffs(tmp_path: Path, dataset: CvwDataset):
     dataset.skip_if_missing()
     result = fcf_bd_converter(
-        input_path=str(dataset.cvw_path), zarr_dir=str(tmp_path), fake_a_plate=False
+        input_path=str(dataset.cvw_path),
+        zarr_dir=str(tmp_path),
+        advanced_parameters=AdvancedBDConverterParameters(fake_a_plate=False),
     )
     assert result is not None
     zarr_url = result["image_list_updates"][0]["zarr_url"]
@@ -61,8 +64,9 @@ def test_convert_first_n_events_skips_remaining_events(
     result = fcf_bd_converter(
         input_path=str(dataset.cvw_path),
         zarr_dir=str(tmp_path),
-        fake_a_plate=False,
-        convert_first_n_events=3,
+        advanced_parameters=AdvancedBDConverterParameters(
+            fake_a_plate=False, convert_first_n_events=3
+        ),
     )
     assert result is not None
     zarr_url = result["image_list_updates"][0]["zarr_url"]

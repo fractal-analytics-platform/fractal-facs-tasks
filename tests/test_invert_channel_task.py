@@ -10,6 +10,7 @@ from fcf_ome_zarr.constants import (
     FOV_ROI_TABLE,
     UINT16_MAX_INTENSITY,
 )
+from fcf_ome_zarr.converters.utils import Shards
 from fcf_ome_zarr.invert_channel_task import invert, invert_channel_task
 
 CHANNEL = "LightLoss_Imaging"
@@ -122,7 +123,7 @@ def test_existing_inverted_label_raises(zarr_url: str):
 
 
 def test_sharded_image(convert_bd_s8: Callable[..., str]):
-    zarr_url = convert_bd_s8(use_sharding=True, target_shard_size=150)
+    zarr_url = convert_bd_s8(storage=Shards(target_shard_size=150))
     invert_channel_task(zarr_url=zarr_url, channel_label=CHANNEL)
 
     image = open_ome_zarr_container(zarr_url).get_image()
